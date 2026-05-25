@@ -7,6 +7,18 @@ let _suBlocks = [];      // current builder blocks
 let _suSheets = [];      // loaded from server
 let _suEditBlockId = null;
 
+
+// ── Apps Script fetch helper — all calls use GET to avoid CORS preflight ──
+async function asGet(url, action, payload) {
+  let fullUrl = url + '?action=' + encodeURIComponent(action);
+  if (payload) fullUrl += '&payload=' + encodeURIComponent(JSON.stringify(payload));
+  const resp = await fetch(fullUrl);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
 // ── Levenshtein distance for fuzzy name matching ──
 function editDistance(a, b) {
   a = a.toLowerCase().trim(); b = b.toLowerCase().trim();
@@ -119,8 +131,7 @@ async function renderSuSheetsList() {
   }
   el.innerHTML = '<div class="text-muted">Loading sheets…</div>';
   try {
-    const resp = await fetch(url+'?action=listSheets');
-    const data = await resp.json();
+    const data = await asGet(url, 'listSheets');
     _suSheets = data.sheets||[];
     if(!_suSheets.length) {
       el.innerHTML = '<div class="text-muted">No sign-up sheets yet. Use the Builder tab to create one.</div>';
@@ -165,7 +176,9 @@ window.loadSuSlots = async function(sheetId) {
   const url = (STORE.settings.signups||{}).appsScriptUrl;
   try {
     const resp = await fetch(url+'?action=getSheet&sheetId='+encodeURIComponent(sheetId));
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
     const data = await resp.json();
+    if(data.error) throw new Error(data.error);
     const slots = data.slots||[];
     if(!slots.length){ el.innerHTML='<div class="text-muted">No slots.</div>'; return; }
     // Group by blockId then date
@@ -211,10 +224,7 @@ window.cancelSuSlot = async function(sheetId, slotId) {
   const url = settings.appsScriptUrl;
   const adminKey = settings.adminKey||'changeme';
   try {
-    const resp = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'cancel',sheetId,slotId,adminKey})});
-    const data = await resp.json();
-    if(data.error) throw new Error(data.error);
+    await asGet(url, 'cancel', {sheetId, slotId, adminKey});
     showToast('Slot cancelled. Student notified.','success');
     loadSuSlots(sheetId);
   } catch(e) { showToast('Error: '+e.message,'error'); }
@@ -224,10 +234,7 @@ window.deleteSuSheet = async function(sheetId) {
   if(!confirm('Delete this sign-up sheet? This cannot be undone.')) return;
   const url = (STORE.settings.signups||{}).appsScriptUrl;
   try {
-    const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'deleteSheet',sheetId})});
-    const data = await resp.json();
-    if(data.error) throw new Error(data.error);
+    await asGet(url, 'deleteSheet', {sheetId});
     showToast('Sheet deleted.','success');
     renderSuSheetsList();
   } catch(e) { showToast('Error: '+e.message,'error'); }
@@ -238,7 +245,9 @@ window.importSuPresentations = async function(sheetId) {
   const url = (STORE.settings.signups||{}).appsScriptUrl;
   try {
     const resp = await fetch(url+'?action=getSheet&sheetId='+encodeURIComponent(sheetId));
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
     const data = await resp.json();
+    if(data.error) throw new Error(data.error);
     const slots = (data.slots||[]).filter(s=>s.studentName&&!s.cancelled);
     let added=0, fuzzy=0, unmatched=[];
     slots.forEach(s => {
@@ -380,10 +389,10 @@ window.publishSuSheet = async function() {
   const payload = { action:'createSheet', sheetId, title, subtitle: document.getElementById('su-subtitle').value.trim(), slots: allSlots };
   document.getElementById('btn-su-publish').textContent='Publishing…';
   document.getElementById('btn-su-publish').disabled=true;
+  // Remove action from payload since it's passed separately
+  const {action: _a, ...payloadData} = payload;
   try {
-    const resp = await fetch(settings.appsScriptUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const data = await resp.json();
-    if(data.error) throw new Error(data.error);
+    await asGet(settings.appsScriptUrl, 'createSheet', payloadData);
     showToast('Sheet published! Switching to Sheets tab.','success');
     _suBlocks=[];
     document.getElementById('su-title').value='';
