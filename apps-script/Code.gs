@@ -294,20 +294,48 @@ function deleteSheet(data) {
 // CALENDAR SYNC
 // ═══════════════════════════════════════════════════════════════
 
-// Build the correct event title for a given date's slots:
-// — Not all filled: return sheet title (generic)
-// — All filled: return formatted presenter list
+// Build the correct event title for a given date's slots.
+// Rules:
+//   — Not all filled: return sheet title (generic)
+//   — All filled by the same person: "Full Name, Role Presentation — Title"
+//   — All filled, same role: "Name1, Name2, Role Presentation — Title"
+//   — All filled, different roles: "Name1, Role1 Presentation; Name2, Role2 Presentation — Title"
 function buildEventTitle(slots, sheetTitle) {
   const active = slots.filter(s => !s.cancelled);
   if (!active.length) return sheetTitle;
   const allFilled = active.every(s => s.studentName && s.studentName.trim() !== '');
   if (!allFilled) return sheetTitle;
-  // All slots filled — format as: "Last, Role Presentation — Title; Last2, Role2 Presentation — Title"
-  return active.map(s => {
-    const last = s.studentName.trim().split(/\s+/).pop();
-    const role = s.role ? s.role.trim() : '';
-    return last + ', ' + role + ' Presentation — ' + sheetTitle;
-  }).join('; ');
+
+  // Deduplicate by name (same person signed up for multiple adjacent slots)
+  const seen = new Set();
+  const unique = [];
+  active.forEach(s => {
+    const key = s.studentName.trim().toLowerCase();
+    if (!seen.has(key)) { seen.add(key); unique.push(s); }
+  });
+
+  // Helper: full name
+  const fullName = s => s.studentName.trim();
+  const role = s => (s.role || '').trim();
+
+  if (unique.length === 1) {
+    // Single presenter (or same person repeated)
+    return fullName(unique[0]) + ', ' + role(unique[0]) + ' Presentation — ' + sheetTitle;
+  }
+
+  // Multiple presenters — check if they share the same role
+  const roles = unique.map(s => role(s));
+  const allSameRole = roles.every(r => r === roles[0]);
+
+  if (allSameRole) {
+    // "Name1, Name2, Role Presentation — Title"
+    const names = unique.map(s => fullName(s)).join(', ');
+    return names + ', ' + roles[0] + ' Presentation — ' + sheetTitle;
+  }
+
+  // Different roles — "Name1, Role1 Presentation; Name2, Role2 Presentation — Title"
+  const parts = unique.map(s => fullName(s) + ', ' + role(s) + ' Presentation');
+  return parts.join('; ') + ' — ' + sheetTitle;
 }
 
 // Create or update the single calendar event for a given session date
