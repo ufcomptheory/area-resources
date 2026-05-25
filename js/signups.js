@@ -192,12 +192,12 @@ window.loadSuSlots = async function(sheetId) {
       groups[key].slots.push(s);
     });
     const settings = STORE.settings.signups||{};
-    let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Time</th><th>Student</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>';
+    let html = '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Time</th><th>Student</th><th>Role</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>';
     let lastHeading = null;
     groupOrder.forEach(key => {
       const g = groups[key];
       if(g.heading && g.heading !== lastHeading) {
-        html += `<tr><td colspan="6" style="background:var(--gold-pale);font-weight:700;font-size:12px;letter-spacing:.5px">${esc(g.heading)}</td></tr>`;
+        html += `<tr><td colspan="7" style="background:var(--gold-pale);font-weight:700;font-size:12px;letter-spacing:.5px">${esc(g.heading)}</td></tr>`;
         lastHeading = g.heading;
       }
       g.slots.forEach(s => {
@@ -207,6 +207,7 @@ window.loadSuSlots = async function(sheetId) {
           <td>${fmtDateShort(s.date)}</td>
           <td>${s.startTime}${s.endTime?' – '+s.endTime:''}</td>
           <td>${taken?esc(s.studentName):''}</td>
+          <td style="font-size:12px">${taken&&s.role?esc(s.role):''}</td>
           <td style="font-size:11px">${taken?esc(s.studentEmail):''}</td>
           <td>${status}</td>
           <td>${taken&&!s.cancelled?`<button class="btn btn-danger btn-xs" onclick="cancelSuSlot('${sheetId}','${s.id}')">Cancel</button>`:''}</td>
@@ -262,13 +263,15 @@ window.importSuPresentations = async function(sheetId) {
       const match = fuzzyMatchStudent(s.studentName);
       const semLabel = dateToSemester(s.date);
       if(match) {
-        STORE.presentations.push({id:uid(),student:match.student.name,date:s.date,semester:semLabel,notes:'Imported from sign-up sheet'+(match.exact?'':' (name matched: '+s.studentName+')')});
+        STORE.presentations.push({id:uid(),student:match.student.name,date:s.date,semester:semLabel,
+          notes:'Imported from sign-up sheet'+(match.exact?'':' (name matched: '+s.studentName+')')
+                +(s.role?' · '+s.role:'')});
         added++;
         if(!match.exact) fuzzy++;
       } else {
         unmatched.push(s.studentName);
-        // Still log it with original name
-        STORE.presentations.push({id:uid(),student:s.studentName,date:s.date,semester:semLabel,notes:'Imported — not matched to roster'});
+        STORE.presentations.push({id:uid(),student:s.studentName,date:s.date,semester:semLabel,
+          notes:'Imported — not matched to roster'+(s.role?' · '+s.role:'')});
         added++;
       }
     });
@@ -388,17 +391,44 @@ window.publishSuSheet = async function() {
   _suBlocks.forEach(b=>allSlots.push(...generateSlotsFromBlock(b)));
   if(!allSlots.length){ showToast('No slots generated.','error'); return; }
   const sheetId = uid();
-  const payload = { action:'createSheet', sheetId, title, subtitle: document.getElementById('su-subtitle').value.trim(), slots: allSlots };
+  const syncCalendar = document.getElementById('su-sync-cal').checked;
+  const calendarId = (document.getElementById('su-cal-id').value.trim()) || 'primary';
+  const payloadData = {
+    sheetId, title,
+    subtitle: document.getElementById('su-subtitle').value.trim(),
+    slots: allSlots,
+    syncCalendar,
+    calendarId
+  };
   document.getElementById('btn-su-publish').textContent='Publishing…';
   document.getElementById('btn-su-publish').disabled=true;
-  // Remove action from payload since it's passed separately
-  const {action: _a, ...payloadData} = payload;
   try {
-    await asGet(settings.appsScriptUrl, 'createSheet', payloadData);
-    showToast('Sheet published! Switching to Sheets tab.','success');
+    let result;
+    try {
+      result = await asGet(settings.appsScriptUrl, 'createSheet', payloadData);
+    } catch(fetchErr) {
+      // Apps Script sometimes returns a non-JSON redirect or timeout even on success.
+      // Verify by trying to load the sheet we just attempted to create.
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const verifyResp = await fetch(settings.appsScriptUrl + '?action=getSheet&sheetId=' + encodeURIComponent(sheetId));
+        const verifyData = await verifyResp.json();
+        if (verifyData && !verifyData.error) {
+          result = { ok: true };
+        } else {
+          throw fetchErr;
+        }
+      } catch(e2) {
+        throw fetchErr;
+      }
+    }
+    showToast('Sheet published!' + (syncCalendar?' Calendar events created.':'') + ' Switching to Sheets tab.','success');
     _suBlocks=[];
     document.getElementById('su-title').value='';
     document.getElementById('su-subtitle').value='';
+    document.getElementById('su-sync-cal').checked=false;
+    document.getElementById('su-cal-id').value='';
+    document.getElementById('su-cal-id-row').style.display='none';
     renderSuBuilder();
     suSwitchTab('su-sheets');
     renderSuSheetsList();
@@ -428,6 +458,13 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function setupSignupHandlers() {
   document.getElementById('btn-add-block').addEventListener('click',()=>openSuBlockModal(null));
   document.getElementById('btn-su-refresh').addEventListener('click',()=>renderSuSheetsList());
+  // Calendar sync checkbox — show/hide calendar ID field
+  document.getElementById('su-sync-cal').addEventListener('change', function() {
+    document.getElementById('su-cal-id-row').style.display = this.checked ? 'block' : 'none';
+    if(this.checked && !document.getElementById('su-cal-id').value) {
+      document.getElementById('su-cal-id').value = 'primary';
+    }
+  });
   document.getElementById('btn-su-clear-builder').addEventListener('click',()=>{
     if(_suBlocks.length&&!confirm('Clear all blocks?')) return;
     _suBlocks=[]; document.getElementById('su-title').value=''; document.getElementById('su-subtitle').value='';
