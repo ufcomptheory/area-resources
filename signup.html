@@ -196,7 +196,6 @@ function openClaim(slotId) {
   document.getElementById('modal-claim').classList.add('open');
   setTimeout(()=>document.getElementById('claim-name').focus(), 100);
 }
-function closeClaim() { document.getElementById('modal-claim').classList.remove('open'); _claimSlotId=null; }
 
 // Show/hide "other" text field
 document.getElementById('claim-role').addEventListener('change', function() {
@@ -212,8 +211,11 @@ async function confirmClaim() {
   if (!name) { alert('Please enter your name.'); return; }
   if (!role) { alert('Please select your role.'); return; }
   if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
-  document.getElementById('btn-confirm-claim').disabled = true;
-  document.getElementById('btn-confirm-claim').textContent = 'Saving…';
+
+  const btn = document.getElementById('btn-confirm-claim');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
   try {
     const payload = { sheetId: SHEET_ID, slotId: _claimSlotId, name, email, role };
     const url = APPS_SCRIPT_URL + '?action=claim&payload=' + encodeURIComponent(JSON.stringify(payload));
@@ -221,17 +223,66 @@ async function confirmClaim() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const result = await resp.json();
     if (result.error) throw new Error(result.error);
-    const s = _slots.find(s=>s.id===_claimSlotId);
-    if(s){ s.studentName=name; s.studentEmail=email; s.role=role; }
+
+    // Update local slot immediately
+    const s = _slots.find(s => s.id === _claimSlotId);
+    if (s) { s.studentName = name; s.studentEmail = email; s.role = role; }
+
+    // Close modal and reset fully before re-rendering
     closeClaim();
-    showMsg('You\'re signed up! A confirmation email has been sent to '+email+'.','success');
-    const row = document.getElementById('slot-'+_claimSlotId);
-    if(row&&s) row.outerHTML = renderSlotRow(s);
+
+    // Re-render the whole sheet from local state so all rows are current
+    // (catches any race where another user claimed a slot during this session)
+    renderSheetFromSlots();
+
+    showMsg('You\'re signed up! A confirmation email has been sent to ' + email + '.', 'success');
+
   } catch(e) {
-    document.getElementById('btn-confirm-claim').disabled = false;
-    document.getElementById('btn-confirm-claim').textContent = 'Confirm Sign-Up';
-    showMsg('Could not save — '+e.message+'. Please try again.','error');
+    // Always reset button on error so user can try again
+    btn.disabled = false;
+    btn.textContent = 'Confirm Sign-Up';
+    showMsg('Could not save — ' + e.message + '. Please try again.', 'error');
   }
+}
+
+function closeClaim() {
+  document.getElementById('modal-claim').classList.remove('open');
+  // Fully reset modal fields and button for next use
+  document.getElementById('claim-name').value = '';
+  document.getElementById('claim-email').value = '';
+  document.getElementById('claim-role').value = '';
+  document.getElementById('claim-role-other').value = '';
+  document.getElementById('claim-role-other').style.display = 'none';
+  const btn = document.getElementById('btn-confirm-claim');
+  btn.disabled = false;
+  btn.textContent = 'Confirm Sign-Up';
+  _claimSlotId = null;
+}
+
+// ── Render sheet from cached _slots (after a claim, without re-fetching) ──
+function renderSheetFromSlots() {
+  const groups = {}, groupOrder = [];
+  _slots.forEach(s => {
+    const key = s.blockId + '__' + s.date;
+    if (!groups[key]) {
+      groups[key] = { heading: s.blockHeading, date: s.date, slots: [] };
+      groupOrder.push(key);
+    }
+    groups[key].slots.push(s);
+  });
+  let html = '';
+  let lastBlockId = null;
+  groupOrder.forEach(key => {
+    const g = groups[key];
+    const blockId = key.split('__')[0];
+    if (blockId !== lastBlockId) {
+      if (g.heading) html += `<div class="block-heading">${esc(g.heading)}</div>`;
+      lastBlockId = blockId;
+    }
+    html += `<div class="block-date">${fmtDate(g.date)}</div>`;
+    g.slots.forEach(s => { html += renderSlotRow(s); });
+  });
+  document.getElementById('sheet-content').innerHTML = html || '<div class="loading">No slots configured.</div>';
 }
 
 // ── Helpers ──
