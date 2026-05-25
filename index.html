@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Composition & Theory — Area Head Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div id="auth-box">
+    <div id="auth-logo">Composition <span>&</span> Theory</div>
+    <div id="auth-sub">Area Head Dashboard · University of Florida</div>
+    <p id="auth-desc">Sign in with your Google account to load your data and sync with Google Calendar.</p>
+    <button id="btn-google-signin" onclick="googleSignIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/></svg>
+      Sign in with Google
+    </button>
+    <div id="auth-config-warning" style="display:none">
+      <p>⚠️ <strong>Google Client ID not configured.</strong></p>
+      <p>Open <code>js/config.js</code> and add your Google OAuth Client ID. See SETUP_GUIDE.md.</p>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" style="display:none">
+  <header id="app-header">
+    <div class="logo">Composition <span>&</span> Theory</div>
+    <div class="subtitle">Area Head Dashboard · University of Florida</div>
+    <button id="hamburger" aria-label="Menu" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+    <div class="header-right">
+      <div id="sync-status" class="sync-badge sync-idle" title="Sync status">
+        <span id="sync-icon">☁</span> <span id="sync-label">Synced</span>
+      </div>
+      <div class="sem-badge" id="sem-badge" onclick="navTo('settings')" title="Click to change semester"></div>
+      <div class="today-badge" id="today-badge"></div>
+      <div id="user-badge">
+        <img id="user-avatar" src="" alt="" style="width:28px;height:28px;border-radius:50%;border:2px solid var(--gold);display:none">
+        <span id="user-name" style="font-size:12px;color:var(--gold-light)"></span>
+        <button class="btn btn-outline btn-xs" onclick="googleSignOut()" style="color:var(--gray-400);border-color:var(--navy-light)">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="app-body">
+    <nav id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Overview</div>
+        <div class="nav-item active" data-page="dashboard"><span class="icon">🏛</span> Dashboard</div>
+        <div class="nav-item" data-page="calendar"><span class="icon">📅</span> Calendar</div>
+        <div class="nav-item" data-page="tasks"><span class="icon">🔔</span> Tasks & Reminders</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Academic</div>
+        <div class="nav-item" data-page="meetings"><span class="icon">📋</span> Meeting Agendas</div>
+        <div class="nav-item" data-page="rotations"><span class="icon">🔄</span> Course Rotations</div>
+        <div class="nav-item" data-page="gta"><span class="icon">📚</span> GTA Assignments</div>
+        <div class="nav-item" data-page="studio"><span class="icon">🎼</span> Studio Assignments</div>
+        <div class="nav-item" data-page="presentations"><span class="icon">🎤</span> Studio Presentations</div>
+        <div class="nav-item" data-page="signups"><span class="icon">📝</span> Sign-Up Sheets</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">People</div>
+        <div class="nav-item" data-page="students"><span class="icon">🎓</span> Students</div>
+        <div class="nav-item" data-page="faculty"><span class="icon">👤</span> Faculty</div>
+        <div class="nav-item" data-page="admissions"><span class="icon">📬</span> Admissions</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Admin</div>
+        <div class="nav-item" data-page="settings"><span class="icon">⚙️</span> Settings</div>
+      </div>
+    </nav>
+    <div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <main id="main">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-title">Good morning</div>
+        <div class="page-sub" id="dash-date-sub"></div>
+        <div class="stat-row" id="stat-row"></div>
+        <div class="two-col">
+          <div>
+            <div class="card"><div class="card-title">📅 Upcoming <span class="badge" id="badge-events">0</span></div><div id="upcoming-events-list"></div></div>
+            <div class="card"><div class="card-title">🔔 Due Soon <span class="badge" id="badge-reminders">0</span></div><div id="upcoming-reminders-list"></div></div>
+          </div>
+          <div>
+            <div class="card"><div class="card-title">🗓 Calendar</div><div class="mini-cal" id="mini-cal"></div></div>
+            <div class="card"><div class="card-title">✅ Active Agenda Items <span class="badge" id="badge-agenda">0</span></div><div id="dash-agenda-preview"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALENDAR -->
+      <div class="page" id="page-calendar">
+        <div class="page-title">Calendar</div>
+        <div class="page-sub">All events synced to Google Calendar</div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <button class="btn btn-outline btn-sm" id="cal-prev">‹</button>
+            <span style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700" id="cal-month-label"></span>
+            <button class="btn btn-outline btn-sm" id="cal-next">›</button>
+            <div class="spacer"></div>
+            <button class="btn btn-primary btn-sm" id="btn-add-event">+ Add Event</button>
+          </div>
+          <div id="full-cal-grid"></div>
+        </div>
+        <div class="card mt-16">
+          <div class="card-title">All Events</div>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Google Cal</th><th></th></tr></thead>
+          <tbody id="events-tbody"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- TASKS & REMINDERS -->
+      <div class="page" id="page-tasks">
+        <div class="page-title">Tasks & Reminders</div>
+        <div class="page-sub">All reminders and recurring tasks in one place — synced to Google Calendar</div>
+        <div class="flex-row mb-16">
+          <button class="btn btn-primary" id="btn-add-task">+ Add Task</button>
+          <button class="btn btn-outline" id="btn-reset-tasks">↺ Reset Recurring for New Semester</button>
+          <div class="spacer"></div>
+          <div class="form-group" style="flex-direction:row;align-items:center;gap:8px">
+            <label style="margin:0;white-space:nowrap">Show:</label>
+            <select id="tasks-filter" style="font-size:12px">
+              <option value="all">All</option>
+              <option value="pending">Pending only</option>
+              <option value="done">Completed</option>
+              <option value="Semester">Semester recurring</option>
+              <option value="Annual">Annual recurring</option>
+              <option value="Once">One-time</option>
+            </select>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrap"><table class="data-table" id="tasks-table">
+            <thead><tr><th>Due</th><th>Task</th><th>Frequency</th><th>Urgency</th><th>Status</th><th>Google Cal</th><th></th></tr></thead>
+            <tbody id="tasks-tbody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- MEETINGS -->
+      <div class="page" id="page-meetings">
+        <div class="page-title">Meeting Agendas & Minutes</div>
+        <div class="page-sub">Schedule meetings, collect agenda items, export agendas</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="meetings-schedule">Scheduled Meetings</button>
+          <button class="tab-btn" data-tab="meetings-agenda">Agenda Items</button>
+          <button class="tab-btn" data-tab="meetings-archive">Archive & Minutes</button>
+        </div>
+        <div class="tab-panel active" id="tab-meetings-schedule">
+          <div class="flex-row mt-8" style="gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="btn-add-meeting">+ Add One-Off Meeting</button>
+            <button class="btn btn-outline" id="btn-generate-meetings">↺ Generate from Recurrence Rule</button>
+            <span class="text-muted" style="font-size:12px;align-self:center">Showing upcoming meetings only. Past meetings are in Archive & Minutes.</span>
+          </div>
+          <div class="card mt-16">
+            <div class="table-wrap"><table class="data-table" id="meetings-table">
+              <thead><tr><th>Date</th><th>Time</th><th>Location</th><th>Agenda Reminder</th><th>Type</th><th>Google Cal</th><th></th></tr></thead>
+              <tbody id="meetings-tbody"></tbody>
+            </table></div>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-meetings-agenda">
+          <div class="flex-row mt-8">
+            <button class="btn btn-primary" id="btn-add-agenda-item">+ Add Agenda Item</button>
+            <button class="btn btn-gold" id="btn-export-agenda">⬇ Export Agenda</button>
+          </div>
+          <div class="card mt-16">
+            <div class="section-divider">Active Items</div><div id="agenda-active-list"></div>
+            <div class="section-divider mt-16">Completed Items</div><div id="agenda-completed-list"></div>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-meetings-archive">
+          <div class="card mt-8"><div id="meetings-archive-list"><div class="text-muted">Past meetings will appear here.</div></div></div>
+        </div>
+      </div>
+
+      <!-- ROTATIONS -->
+      <div class="page" id="page-rotations">
+        <div class="page-title">Course Rotations</div>
+        <div class="page-sub">Reference rotations and custom planning scenarios</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="rot-current">26/27 Cycle</button>
+          <button class="tab-btn" data-tab="rot-2728">27/28 Cycle</button>
+          <button class="tab-btn" data-tab="rot-scenarios">Scenarios</button>
+        </div>
+        <div class="tab-panel active" id="tab-rot-current">
+          <div class="flex-row mt-8 mb-8"><button class="btn btn-outline btn-sm" onclick="addRotCourse('rot2627')">+ Add Course</button></div>
+          <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Fall</th><th>Spring</th><th>Summer</th><th></th></tr></thead><tbody id="rot-2627-tbody"></tbody></table></div></div>
+        </div>
+        <div class="tab-panel" id="tab-rot-2728">
+          <div class="flex-row mt-8 mb-8"><button class="btn btn-outline btn-sm" onclick="addRotCourse('rot2728')">+ Add Course</button></div>
+          <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Course</th><th>Fall</th><th>Spring</th><th>Summer</th><th></th></tr></thead><tbody id="rot-2728-tbody"></tbody></table></div></div>
+        </div>
+        <div class="tab-panel" id="tab-rot-scenarios">
+          <div class="flex-row mt-8"><button class="btn btn-primary" id="btn-new-scenario">+ New Scenario</button></div>
+          <div id="scenarios-list" class="mt-16"></div>
+        </div>
+      </div>
+
+      <!-- GTA -->
+      <div class="page" id="page-gta">
+        <div class="page-title">GTA Assignments</div>
+        <div class="page-sub">Track GTA teaching assignments across semesters</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="gta-current">By Semester</button>
+          <button class="tab-btn" data-tab="gta-history">History</button>
+        </div>
+        <div class="tab-panel active" id="tab-gta-current">
+          <div class="flex-row mt-8">
+            <div class="form-group"><label>Semester</label><select id="gta-sem-select"></select></div>
+            <button class="btn btn-primary" style="margin-top:18px" id="btn-add-gta">+ Add Assignment</button>
+          </div>
+          <div class="card mt-16" id="gta-hours-check"></div>
+          <div class="flex-row mt-8 mb-8">
+            <button class="btn btn-gold btn-sm" onclick="exportGTA()">⬇ Copy Table to Clipboard</button>
+          </div>
+          <div class="card mt-8"><div class="table-wrap"><table class="data-table"><thead><tr><th>GTA</th><th>Course</th><th>Hours</th><th>Supervisor</th><th>ToR</th><th></th></tr></thead><tbody id="gta-tbody"></tbody></table></div></div>
+        </div>
+        <div class="tab-panel" id="tab-gta-history">
+          <div class="filter-bar mt-8"><div class="form-group"><label>Filter by GTA</label><select id="gta-hist-filter"><option value="">All</option></select></div></div>
+          <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Semester</th><th>GTA</th><th>Course</th><th>Hours</th><th>Supervisor</th><th>ToR</th></tr></thead><tbody id="gta-hist-tbody"></tbody></table></div></div>
+        </div>
+      </div>
+
+      <!-- STUDIO -->
+      <div class="page" id="page-studio">
+        <div class="page-title">Studio Assignments</div>
+        <div class="page-sub">Private composition lessons — only Composition faculty shown</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="studio-current">By Semester</button>
+          <button class="tab-btn" data-tab="studio-history">History</button>
+        </div>
+        <div class="tab-panel active" id="tab-studio-current">
+          <div class="flex-row mt-8">
+            <div class="form-group"><label>Semester</label><select id="studio-sem-select"></select></div>
+            <button class="btn btn-primary" style="margin-top:18px" id="btn-add-studio">+ Add Assignment</button>
+          </div>
+          <div class="card mt-16" id="studio-load-summary"></div>
+          <div class="card mt-8" id="studio-coverage"></div>
+          <div class="flex-row mt-8 mb-8">
+            <button class="btn btn-gold btn-sm" onclick="exportStudio()">⬇ Copy Table to Clipboard</button>
+          </div>
+          <div class="card mt-8"><div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Degree</th><th>Faculty</th><th>Chair</th><th>Notes</th><th></th></tr></thead><tbody id="studio-tbody"></tbody></table></div></div>
+        </div>
+        <div class="tab-panel" id="tab-studio-history">
+          <div class="filter-bar mt-8"><div class="form-group"><label>Filter by Student</label><select id="studio-hist-filter"><option value="">All</option></select></div></div>
+          <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Semester</th><th>Student</th><th>Faculty</th><th>Chair</th></tr></thead><tbody id="studio-hist-tbody"></tbody></table></div></div>
+        </div>
+      </div>
+
+      <!-- STUDENTS -->
+      <div class="page" id="page-students">
+        <div class="page-title">Students</div>
+        <div class="page-sub">Composition student roster — click any row to view/edit profile</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="stu-active">Active</button>
+          <button class="tab-btn" data-tab="stu-alumni">Alumni &amp; Former</button>
+        </div>
+
+        <!-- ACTIVE TAB -->
+        <div class="tab-panel active" id="tab-stu-active">
+          <div class="flex-row mb-16">
+            <input type="text" id="stu-search" placeholder="Search…" style="width:200px">
+            <select id="stu-deg-filter"><option value="">All degrees</option></select>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" id="btn-add-student">+ Add Student</button>
+          </div>
+          <div class="card">
+            <div class="table-wrap"><table class="data-table" id="students-table">
+              <thead><tr><th>Name</th><th>Degree</th><th>Entry</th><th>Exp. Grad</th><th>Chair</th><th>Status</th><th>GTA Hrs</th><th></th></tr></thead>
+              <tbody id="students-tbody"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ALUMNI TAB -->
+        <div class="tab-panel" id="tab-stu-alumni">
+          <div class="flex-row mb-16">
+            <input type="text" id="alumni-search" placeholder="Search alumni…" style="width:200px">
+            <select id="alumni-deg-filter"><option value="">All degrees</option></select>
+            <select id="alumni-exit-filter">
+              <option value="">All exit types</option>
+              <option value="Graduated">Graduated</option>
+              <option value="Left Program">Left Program</option>
+              <option value="Transferred">Transferred</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="card">
+            <div class="table-wrap"><table class="data-table" id="alumni-table">
+              <thead><tr><th>Name</th><th>Degree</th><th>Entry</th><th>Exit Year</th><th>Exit Type</th><th>Chair</th><th></th></tr></thead>
+              <tbody id="alumni-tbody"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FACULTY -->
+      <div class="page" id="page-faculty">
+        <div class="page-title">Faculty</div>
+        <div class="page-sub">Faculty profiles — click any row to view/edit</div>
+        <div class="flex-row mt-8 mb-16">
+          <div class="form-group" style="flex-direction:row;align-items:center;gap:8px">
+            <label style="margin:0">Area:</label>
+            <select id="fac-area-filter" style="font-size:12px">
+              <option value="">All areas</option>
+              <option>Composition</option><option>Theory</option><option>Aural Skills</option>
+            </select>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" id="btn-add-faculty">+ Add Faculty</button>
+        </div>
+        <div class="card">
+          <div class="table-wrap"><table class="data-table" id="faculty-table">
+            <thead><tr><th>Name</th><th>Title</th><th>Areas</th><th>Studio Load</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="faculty-tbody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- PRESENTATIONS -->
+      <div class="page" id="page-presentations">
+        <div class="page-title">Studio Presentations</div>
+        <div class="page-sub">Composition studio class presentation history</div>
+        <div class="flex-row mt-8 mb-16">
+          <div class="form-group"><label>Semester</label><select id="pres-sem-filter"><option value="">All</option></select></div>
+          <div class="form-group"><label>Student</label><select id="pres-stu-filter"><option value="">All</option></select></div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" id="btn-add-pres">+ Log Presentation</button>
+        </div>
+        <div class="card mb-8" id="pres-coverage"></div>
+        <div class="card">
+          <div class="table-wrap"><table class="data-table" id="pres-table">
+            <thead><tr><th>Date</th><th>Semester</th><th>Student</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="pres-tbody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- ADMISSIONS -->
+      <div class="page" id="page-admissions">
+        <div class="page-title">Admissions</div>
+        <div class="page-sub">Track applicants through the review and offer pipeline</div>
+        <div class="flex-row mt-8 mb-8">
+          <div class="form-group"><label>Cycle</label><select id="adm-cycle-sel"></select></div>
+          <button class="btn btn-primary" style="margin-top:18px" id="btn-add-applicant">+ Add Applicant</button>
+          <button class="btn btn-outline" style="margin-top:18px" id="btn-add-adm-cycle">+ New Cycle</button>
+        </div>
+        <div class="card mt-8">
+          <div class="card-title">Pipeline</div>
+          <div id="adm-kanban" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px"></div>
+        </div>
+        <div class="card mt-16">
+          <div class="table-wrap"><table class="data-table" id="adm-table">
+            <thead><tr><th>Name</th><th>Degree</th><th>Stage</th><th>Focus</th><th>DMA Form</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="adm-tbody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="page" id="page-settings">
+        <div class="page-title">Settings</div>
+        <div class="page-sub">Global configuration for the dashboard</div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">📆 Current Semester</div>
+            <div class="form-group mb-8"><label>Current Semester</label>
+              <select id="setting-current-sem"></select>
+            </div>
+            <p class="text-muted" style="font-size:12px;margin-top:8px">Used as the default in GTA Assignments, Studio Assignments, and other semester-aware tools.</p>
+            <button class="btn btn-primary mt-16" id="btn-save-semester">Save Semester</button>
+          </div>
+          <div class="card">
+            <div class="card-title">🏫 Academic Year Bounds</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px">Defines which months are included when auto-generating meeting dates.</p>
+            <div class="form-row">
+              <div class="form-group"><label>Start Month</label>
+                <select id="setting-ay-start"></select>
+              </div>
+              <div class="form-group"><label>End Month</label>
+                <select id="setting-ay-end"></select>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btn-save-ay">Save Academic Year</button>
+          </div>
+          <div class="card">
+            <div class="card-title">📋 Meeting Name</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px">Name used for recurring meetings on the calendar and in task reminders.</p>
+            <div class="form-group mb-10"><label>Meeting Name</label><input type="text" id="setting-meeting-name" placeholder="Comp/Theory Area Meeting" style="width:100%"></div>
+            <button class="btn btn-primary" id="btn-save-meeting-name">Save Name</button>
+          </div>
+          <div class="card" style="grid-column:1/-1">
+            <div class="card-title">📋 Meeting Recurrence Rule</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px">Defines the pattern for auto-generating monthly faculty meetings. After changing, use "Generate from Recurrence Rule" on the Meetings page.</p>
+            <div class="form-row">
+              <div class="form-group"><label>Enabled</label>
+                <select id="setting-mr-enabled"><option value="1">Yes</option><option value="0">No</option></select>
+              </div>
+              <div class="form-group"><label>Day of Week</label>
+                <select id="setting-mr-dow">
+                  <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Which Occurrence</label>
+                <select id="setting-mr-occ">
+                  <option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>
+                  <option value="4">4th</option><option value="-1">Last</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Start Time</label><input type="text" id="setting-mr-time" placeholder="3:00 PM" style="width:110px"></div>
+              <div class="form-group"><label>End Time</label><input type="text" id="setting-mr-timeend" placeholder="4:00 PM" style="width:110px"></div>
+              <div class="form-group"><label>Location / Link</label><input type="text" id="setting-mr-loc" style="width:240px"></div>
+              <div class="form-group"><label>Agenda Reminder (days before)</label><input type="number" id="setting-mr-remdays" style="width:80px"></div>
+            </div>
+            <button class="btn btn-primary" id="btn-save-mr">Save Recurrence Rule</button>
+          </div>
+          <div class="card">
+            <div class="card-title">🎓 Degree Programs</div>
+            <div id="degrees-list" class="mb-8"></div>
+            <div class="flex-row"><input type="text" id="new-degree" placeholder="New degree…" style="width:160px"><button class="btn btn-outline btn-sm" id="btn-add-degree">Add</button></div>
+          </div>
+          <div class="card" style="grid-column:1/-1">
+            <div class="card-title">💾 Data Management</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:16px;line-height:1.6">
+              Your data is auto-saved to Google Drive whenever you make changes. Use these tools to download a local backup, restore from a previous backup file, or reset the dashboard to a clean state.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
+              <div style="flex:1;min-width:200px;background:var(--gray-100);border-radius:8px;padding:16px">
+                <div style="font-weight:600;font-size:13px;margin-bottom:6px">⬇ Download Backup</div>
+                <div class="text-muted" style="margin-bottom:10px">Saves all your data as a <code>.json</code> file to your Downloads folder. Filename includes today's date.</div>
+                <button class="btn btn-primary btn-sm" id="btn-download-backup">Download Backup</button>
+              </div>
+              <div style="flex:1;min-width:200px;background:var(--gray-100);border-radius:8px;padding:16px">
+                <div style="font-weight:600;font-size:13px;margin-bottom:6px">⬆ Load from File</div>
+                <div class="text-muted" style="margin-bottom:10px">Replaces all current data with the contents of a backup <code>.json</code> file. <strong>This cannot be undone.</strong></div>
+                <label class="btn btn-outline btn-sm" style="cursor:pointer">
+                  Choose Backup File…
+                  <input type="file" id="input-load-backup" accept=".json" style="display:none">
+                </label>
+              </div>
+              <div style="flex:1;min-width:200px;background:#fde8e6;border-radius:8px;padding:16px;border:1px solid #f5c6c2">
+                <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--red)">⚠ Clear All Data</div>
+                <div class="text-muted" style="margin-bottom:10px">Resets the dashboard to a completely empty state. <strong>All records will be permanently deleted.</strong> Download a backup first.</div>
+                <button class="btn btn-danger btn-sm" id="btn-clear-data">Clear All Data…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- SIGN-UP SHEETS -->
+      <div class="page" id="page-signups">
+        <div class="page-title">Sign-Up Sheets</div>
+        <div class="page-sub">Create and manage student sign-up sheets — hosted publicly, no login required</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="su-sheets">Sheets</button>
+          <button class="tab-btn" data-tab="su-builder">Builder</button>
+          <button class="tab-btn" data-tab="su-settings">Settings</button>
+        </div>
+
+        <!-- SHEETS LIST -->
+        <div class="tab-panel active" id="tab-su-sheets">
+          <div class="flex-row mt-8 mb-16">
+            <button class="btn btn-primary" onclick="suSwitchTab('su-builder')">+ New Sign-Up Sheet</button>
+            <button class="btn btn-outline" id="btn-su-refresh">↺ Refresh from Server</button>
+          </div>
+          <div id="su-sheets-list"><div class="text-muted">Loading…</div></div>
+        </div>
+
+        <!-- BUILDER -->
+        <div class="tab-panel" id="tab-su-builder">
+          <div class="card mt-8">
+            <div class="card-title">Sheet Details</div>
+            <div class="form-row">
+              <div class="form-group" style="flex:1"><label>Sheet Title</label>
+                <input type="text" id="su-title" placeholder="e.g. Composition Studio — Fall 2026" style="width:100%"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex:1"><label>Subtitle / Description (optional)</label>
+                <input type="text" id="su-subtitle" placeholder="e.g. Sign up for one 25-minute presentation slot" style="width:100%"></div>
+            </div>
+          </div>
+
+          <div class="card mt-8">
+            <div class="card-title">Time Blocks <button class="btn btn-outline btn-sm" style="margin-left:auto" id="btn-add-block">+ Add Block</button></div>
+            <div id="su-blocks-list"></div>
+          </div>
+
+          <div class="card mt-8" id="su-preview-card" style="display:none">
+            <div class="card-title">Preview <span class="badge" id="su-slot-count">0 slots</span></div>
+            <div id="su-preview"></div>
+          </div>
+
+          <div class="flex-row mt-16">
+            <button class="btn btn-primary" id="btn-su-publish">🚀 Publish Sheet</button>
+            <button class="btn btn-outline" id="btn-su-clear-builder">Clear</button>
+          </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div class="tab-panel" id="tab-su-settings">
+          <div class="card mt-8">
+            <div class="card-title">🔗 Apps Script Connection</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">
+              Paste your Apps Script Web App URL here. See the setup guide for instructions on deploying the script.
+            </p>
+            <div class="form-group mb-10"><label>Apps Script URL</label>
+              <input type="text" id="su-apps-script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%">
+            </div>
+            <div class="form-group mb-10"><label>Admin Key (must match ADMIN_KEY in Script Properties)</label>
+              <input type="text" id="su-admin-key" placeholder="Set a secret key" style="width:300px">
+            </div>
+            <div class="form-group mb-10"><label>Public Sign-Up Page URL (your GitHub Pages signup.html URL)</label>
+              <input type="text" id="su-public-url" placeholder="https://yourusername.github.io/your-repo/signup.html" style="width:100%">
+            </div>
+            <div class="form-group mb-10"><label>Reminder: days before (first reminder)</label>
+              <input type="number" id="su-remind-days-1" value="7" style="width:90px">
+            </div>
+            <div class="form-group mb-10"><label>Reminder: days before (second reminder)</label>
+              <input type="number" id="su-remind-days-2" value="1" style="width:90px">
+            </div>
+            <button class="btn btn-primary" id="btn-su-save-settings">Save Settings</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+
+<!-- Sign-Up Block Modal -->
+<div class="modal-overlay" id="modal-su-block"><div class="modal-box" style="max-width:620px">
+  <h3 id="modal-block-title">Add Time Block</h3>
+  <input type="hidden" id="su-block-edit-id">
+  <div class="form-row">
+    <div class="form-group" style="flex:1"><label>Sub-heading (optional)</label>
+      <input type="text" id="su-block-heading" placeholder="e.g. DMA Students — 30 min" style="width:100%"></div>
+  </div>
+  <div style="background:var(--gray-100);border-radius:7px;padding:14px;margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--navy);margin-bottom:12px">Date & Time</div>
+    <div class="form-row">
+      <div class="form-group"><label>Start Date</label><input type="date" id="su-block-date"></div>
+      <div class="form-group"><label>Start Time</label><input type="text" id="su-block-start" placeholder="2:00 PM" style="width:110px"></div>
+      <div class="form-group"><label>Slot Duration (min)</label><input type="number" id="su-block-duration" value="25" style="width:90px" min="1"></div>
+      <div class="form-group"><label>Number of Slots</label><input type="number" id="su-block-count" value="2" style="width:80px" min="1"></div>
+      <div class="form-group"><label>Gap Between Slots (min)</label><input type="number" id="su-block-gap" value="0" style="width:80px" min="0"></div>
+    </div>
+  </div>
+  <div style="background:var(--gray-100);border-radius:7px;padding:14px;margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--navy);margin-bottom:10px">Recurrence (optional)</div>
+    <div class="form-row">
+      <div class="form-group"><label>Repeats</label>
+        <select id="su-block-recur">
+          <option value="none">Does not repeat</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Every 2 weeks</option>
+        </select>
+      </div>
+      <div class="form-group" id="su-recur-until-group" style="display:none"><label>Until (end date)</label>
+        <input type="date" id="su-block-until">
+      </div>
+      <div class="form-group" id="su-recur-days-group" style="display:none"><label>Day of Week</label>
+        <select id="su-block-dow">
+          <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+          <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-su-block')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-block">Add Block</button>
+  </div>
+</div></div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ══ MODALS ══ -->
+<div class="modal-overlay" id="modal-event"><div class="modal-box">
+  <h3>Add Event</h3>
+  <div class="form-row">
+    <div class="form-group"><label>Title</label><input type="text" id="ev-title" style="width:300px"></div>
+    <div class="form-group"><label>Date</label><input type="date" id="ev-date"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Category</label><select id="ev-cat"><option>Meeting</option><option>Deadline</option><option>Reminder</option><option>Admissions</option><option>Academic</option><option>Other</option></select></div>
+    <div class="form-group"><label>Start Time</label><input type="text" id="ev-time" placeholder="2:00 PM" style="width:110px"></div>
+    <div class="form-group"><label>End Time</label><input type="text" id="ev-time-end" placeholder="3:00 PM" style="width:110px"></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="ev-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-event')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-event">Save & Sync to Google Cal</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-task"><div class="modal-box">
+  <h3 id="modal-task-title">Add Task / Reminder</h3>
+  <div class="form-group mb-10"><label>Title</label><input type="text" id="task-title" style="width:100%"></div>
+  <div class="form-row">
+    <div class="form-group"><label>Due Date</label><input type="date" id="task-due"></div>
+    <div class="form-group"><label>Urgency</label><select id="task-urg"><option value="low">Low</option><option value="med" selected>Medium</option><option value="high">High</option></select></div>
+    <div class="form-group"><label>Frequency</label><select id="task-freq"><option value="Once">Once</option><option value="Semester">Each Semester</option><option value="Annual">Annual</option></select></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="task-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-task')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-task">Save & Sync to Google Cal</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-meeting"><div class="modal-box">
+  <h3 id="modal-meeting-title">Add One-Off Meeting</h3>
+  <input type="hidden" id="mtg-edit-id">
+  <div class="form-row">
+    <div class="form-group"><label>Date</label><input type="date" id="mtg-date"></div>
+    <div class="form-group"><label>Start Time</label><input type="text" id="mtg-time" placeholder="3:00 PM" style="width:110px"></div>
+    <div class="form-group"><label>End Time</label><input type="text" id="mtg-time-end" placeholder="4:00 PM" style="width:110px"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Location / Link</label><input type="text" id="mtg-location" style="width:260px"></div>
+    <div class="form-group"><label>Agenda Reminder (days before)</label><input type="number" id="mtg-remind-days" value="7" style="width:80px"></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="mtg-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-meeting')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-meeting">Save & Sync to Google Cal</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-agenda"><div class="modal-box">
+  <h3>Add Agenda Item</h3>
+  <div class="form-group mb-10"><label>Item Description</label><textarea id="ai-text" rows="3" style="width:100%"></textarea></div>
+  <div class="form-row">
+    <div class="form-group"><label>Submitted By</label><input type="text" id="ai-submitter" style="width:200px"></div>
+    <div class="form-group"><label>Priority</label><select id="ai-priority"><option>Normal</option><option>High</option><option>Informational</option></select></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-agenda')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-agenda">Save</button>
+  </div>
+</div></div>
+
+<!-- Person modal (student or faculty) -->
+<div class="modal-overlay" id="modal-person"><div class="modal-box" style="max-width:680px">
+  <h3 id="modal-person-title">Person Profile</h3>
+  <input type="hidden" id="person-id">
+  <input type="hidden" id="person-type">
+  <!-- Student fields -->
+  <div id="person-student-fields">
+    <div class="form-row">
+      <div class="form-group"><label>Name</label><input type="text" id="person-name" style="width:240px"></div>
+      <div class="form-group"><label>Degree</label><select id="person-degree" style="width:120px"></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Year of Entry</label><input type="text" id="person-entry" style="width:110px" placeholder="e.g. 2024"></div>
+      <div class="form-group"><label>Exp. Graduation</label><input type="text" id="person-grad" style="width:110px" placeholder="e.g. 2027"></div>
+      <div class="form-group"><label>Status</label><select id="person-status"><option value="">None</option><option>Double Major</option><option>Double Degree</option><option>Cognate</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Committee Chair</label><input type="text" id="person-chair" style="width:200px"></div>
+      <div class="form-group"><label>GTA Hours/week</label><input type="number" id="person-hours" style="width:100px" placeholder="0 if not GTA"></div>
+      <div class="form-group"><label>Fellowship?</label><select id="person-fellow"><option value="0">No</option><option value="1">Yes</option></select></div>
+    </div>
+  </div>
+  <!-- Faculty fields -->
+  <div id="person-faculty-fields" style="display:none">
+    <div class="form-row">
+      <div class="form-group"><label>Name</label><input type="text" id="fac-name-p" style="width:240px"></div>
+      <div class="form-group"><label>Title</label><input type="text" id="fac-title-p" placeholder="e.g. Professor" style="width:200px"></div>
+    </div>
+    <div class="form-group mb-10"><label>Areas (check all that apply)</label>
+      <div style="display:flex;gap:16px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400"><input type="checkbox" id="fac-area-comp"> Composition</label>
+        <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400"><input type="checkbox" id="fac-area-theory"> Theory</label>
+        <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400"><input type="checkbox" id="fac-area-aural"> Aural Skills</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Min Studio Students</label><input type="number" id="fac-min-p" value="0" style="width:90px"></div>
+      <div class="form-group"><label>Max Studio Students</label><input type="number" id="fac-max-p" value="8" style="width:90px"></div>
+    </div>
+  </div>
+  <!-- Student exit fields (shown only for inactive students) -->
+  <div id="person-exit-fields" style="display:none">
+    <div style="background:var(--gold-pale);border:1px solid var(--gold);border-radius:6px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--navy);margin-bottom:10px">Alumni Record</div>
+      <div class="form-row">
+        <div class="form-group"><label>Exit Year</label><input type="text" id="person-exit-year" placeholder="e.g. 2027" style="width:110px"></div>
+        <div class="form-group"><label>Exit Type</label>
+          <select id="person-exit-type">
+            <option value="Graduated">Graduated</option>
+            <option value="Left Program">Left Program</option>
+            <option value="Transferred">Transferred</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Shared fields -->
+  <div class="form-group mb-10"><label>Notes</label><textarea id="person-notes" rows="4" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-person')">Cancel</button>
+    <button class="btn btn-danger btn-sm" id="btn-delete-person" style="margin-right:auto">Delete</button>
+    <button class="btn btn-outline btn-sm" id="btn-toggle-active" style="display:none"></button>
+    <button class="btn btn-primary" id="btn-save-person">Save</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-pres"><div class="modal-box">
+  <h3>Log Studio Presentation</h3>
+  <div class="form-row">
+    <div class="form-group"><label>Student</label><select id="pres-student" style="width:200px"></select></div>
+    <div class="form-group"><label>Date</label><input type="date" id="pres-date"></div>
+    <div class="form-group"><label>Semester</label><input type="text" id="pres-sem" style="width:130px" placeholder="e.g. Fall 2026"></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="pres-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-pres')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-pres">Save</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-gta"><div class="modal-box">
+  <h3>Add GTA Assignment</h3>
+  <div class="form-row">
+    <div class="form-group"><label>GTA</label><select id="gta-name-sel" style="width:200px"></select></div>
+    <div class="form-group"><label>Semester</label><input type="text" id="gta-sem-inp" style="width:130px"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Course</label><input type="text" id="gta-course" placeholder="e.g. MUT 1111 Theory 1" style="width:260px"></div>
+    <div class="form-group"><label>Hours</label><input type="number" id="gta-hours" style="width:80px"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Supervisor</label><input type="text" id="gta-super" style="width:180px"></div>
+    <div class="form-group"><label>Teacher of Record?</label><select id="gta-tor"><option value="0">No</option><option value="1">Yes</option></select></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-gta')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-gta">Save</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-studio"><div class="modal-box">
+  <h3>Add Studio Assignment</h3>
+  <div class="form-row">
+    <div class="form-group"><label>Student</label><select id="stu-sel-studio" style="width:210px"></select></div>
+    <div class="form-group"><label>Faculty</label><select id="fac-sel-studio" style="width:160px"></select></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Semester</label><input type="text" id="studio-sem-inp" style="width:130px"></div>
+    <div class="form-group"><label>Committee Chair?</label><select id="studio-chair-sel"><option value="0">No</option><option value="1">Yes</option></select></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="studio-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-studio')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-studio">Save</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-applicant"><div class="modal-box">
+  <h3 id="modal-app-title">Add Applicant</h3>
+  <input type="hidden" id="app-id">
+  <div class="form-row">
+    <div class="form-group"><label>Name</label><input type="text" id="app-name" style="width:230px"></div>
+    <div class="form-group"><label>Degree Applied</label><select id="app-degree" style="width:120px"></select></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Instrument / Focus</label><input type="text" id="app-focus" style="width:200px"></div>
+    <div class="form-group"><label>Stage</label><select id="app-stage">
+      <option>Under Review</option><option>Shortlisted</option><option>Interview Scheduled</option>
+      <option>Interviewed</option><option>DMA Form Needed</option><option>Offer Extended</option>
+      <option>Admitted</option><option>Declined</option>
+    </select></div>
+  </div>
+  <div class="form-row" id="dma-form-row">
+    <div class="form-group"><label>DMA Form Status</label><select id="app-dma"><option value="">N/A</option><option>Not Started</option><option>In Progress</option><option>Submitted</option><option>Approved</option></select></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="app-notes" rows="3" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-applicant')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-applicant">Save</button>
+  </div>
+</div></div>
+
+<div class="modal-overlay" id="modal-scenario"><div class="modal-box">
+  <h3>New Rotation Scenario</h3>
+  <div class="form-row">
+    <div class="form-group"><label>Scenario Name</label><input type="text" id="sc-name" style="width:260px" placeholder="e.g. Fall 2028 Proposal"></div>
+    <div class="form-group"><label>Based On</label><select id="sc-base"><option>26/27</option><option>27/28</option><option>Blank</option></select></div>
+  </div>
+  <div class="form-group mb-10"><label>Notes</label><textarea id="sc-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-scenario')">Cancel</button>
+    <button class="btn btn-primary" id="btn-save-scenario">Create Scenario</button>
+  </div>
+</div></div>
+
+<script src="js/config.js"></script>
+<script src="js/signups.js"></script>
+<script src="js/google.js"></script>
+<script src="js/store.js"></script>
+<script src="js/calendar.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

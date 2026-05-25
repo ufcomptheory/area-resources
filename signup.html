@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="page-title">Sign-Up Sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#1a2744;--gold:#c9a84c;--gold-pale:#f5ecd1;--cream:#faf8f3;--white:#fff;--gray-100:#f0ede6;--gray-200:#ddd8cc;--gray-400:#9e9788;--gray-600:#5a5649;--red:#c0392b;--green:#2d7a4f;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Source Sans 3',sans-serif;background:var(--cream);color:var(--navy);min-height:100vh;}
+header{background:var(--navy);border-bottom:3px solid var(--gold);padding:18px 24px 14px;}
+header h1{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#fff;id="sheet-title-display"}
+header .sub{font-size:12px;color:var(--gray-400);letter-spacing:1px;text-transform:uppercase;margin-top:4px;}
+.container{max-width:860px;margin:0 auto;padding:28px 16px 60px;}
+.status-bar{background:var(--white);border:1px solid var(--gray-200);border-radius:8px;padding:12px 18px;margin-bottom:24px;font-size:13px;color:var(--gray-600);display:flex;align-items:center;gap:10px;}
+.status-bar .dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.sheet-title{font-family:'Playfair Display',serif;font-size:26px;font-weight:700;margin-bottom:6px;}
+.sheet-desc{font-size:14px;color:var(--gray-600);margin-bottom:28px;line-height:1.6;}
+
+/* Block grouping */
+.block-group{margin-bottom:32px;}
+.block-heading{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:var(--navy);padding:10px 0 8px;border-bottom:2px solid var(--gold);margin-bottom:12px;}
+.block-date{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--gray-400);padding:8px 0 4px;margin-top:8px;}
+
+/* Slot rows */
+.slot-row{display:flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--gray-200);border-radius:7px;margin-bottom:7px;background:var(--white);transition:.15s;}
+.slot-row.taken{background:var(--gray-100);}
+.slot-row.taken .slot-time{color:var(--gray-600);}
+.slot-time{font-weight:600;font-size:14px;min-width:110px;flex-shrink:0;}
+.slot-name{flex:1;font-size:14px;}
+.slot-name.empty{color:var(--gray-400);font-style:italic;}
+.slot-email{font-size:11px;color:var(--gray-400);}
+.btn-claim{padding:7px 16px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;font-family:'Source Sans 3',sans-serif;}
+.btn-claim:active{opacity:.8;}
+.cancelled-badge{font-size:11px;background:#fde8e6;color:var(--red);border-radius:4px;padding:2px 8px;font-weight:600;}
+
+/* Claim modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-end;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--white);border-radius:16px 16px 0 0;padding:28px 22px;width:100%;max-width:480px;}
+.modal-box::before{content:'';display:block;width:36px;height:4px;background:var(--gray-200);border-radius:2px;margin:-14px auto 16px;}
+.modal-box h3{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;margin-bottom:4px;}
+.modal-slot-info{font-size:13px;color:var(--gray-600);margin-bottom:18px;}
+.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+.form-group label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);}
+.form-group input{padding:10px 12px;border:1px solid var(--gray-200);border-radius:5px;font-size:15px;font-family:'Source Sans 3',sans-serif;-webkit-appearance:none;}
+.form-group input:focus{outline:none;border-color:var(--navy);}
+.modal-footer{display:flex;gap:10px;margin-top:18px;}
+.btn-cancel-modal{flex:1;padding:11px;background:var(--gray-100);border:none;border-radius:5px;font-size:14px;font-weight:500;cursor:pointer;font-family:'Source Sans 3',sans-serif;}
+.btn-confirm{flex:2;padding:11px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Source Sans 3',sans-serif;}
+.btn-confirm:disabled{opacity:.5;cursor:not-allowed;}
+.msg{padding:14px 16px;border-radius:7px;font-size:14px;margin-bottom:16px;}
+.msg.success{background:#d4edda;color:var(--green);}
+.msg.error{background:#fde8e6;color:var(--red);}
+.loading{text-align:center;padding:60px 0;color:var(--gray-400);font-size:15px;}
+@media(min-width:600px){.modal-overlay{align-items:center;}.modal-box{border-radius:12px;}.modal-box::before{display:none;}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="sheet-title-display">Loading…</h1>
+  <div class="sub" id="sheet-sub-display"></div>
+</header>
+<div class="container">
+  <div id="msg-area"></div>
+  <div id="sheet-content"><div class="loading">Loading sign-up sheet…</div></div>
+</div>
+
+<!-- Claim modal -->
+<div class="modal-overlay" id="modal-claim">
+  <div class="modal-box">
+    <h3>Sign Up for This Slot</h3>
+    <div class="modal-slot-info" id="claim-slot-info"></div>
+    <div class="form-group">
+      <label>Your Name</label>
+      <input type="text" id="claim-name" placeholder="First Last" autocomplete="name">
+    </div>
+    <div class="form-group">
+      <label>Your Email (for confirmation &amp; reminders)</label>
+      <input type="email" id="claim-email" placeholder="you@ufl.edu" autocomplete="email">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel-modal" onclick="closeClaim()">Cancel</button>
+      <button class="btn-confirm" id="btn-confirm-claim" onclick="confirmClaim()">Confirm Sign-Up</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config: set by URL param ?sheet=SHEET_ID or by query string
+// The Apps Script web app URL is embedded at build time
+const APPS_SCRIPT_URL = '%%APPS_SCRIPT_URL%%'; // replaced by dashboard at sheet generation time
+
+const params = new URLSearchParams(location.search);
+const SHEET_ID = params.get('sheet') || '';
+
+let _slots = [];     // full slot list loaded from Apps Script
+let _claimSlotId = null;
+
+// ── Load sheet data ──
+async function loadSheet() {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('%%')) {
+    document.getElementById('sheet-content').innerHTML =
+      '<div class="msg error">Sign-up sheet not yet configured. Please contact the administrator.</div>';
+    return;
+  }
+  try {
+    const url = APPS_SCRIPT_URL + '?action=getSheet&sheetId=' + encodeURIComponent(SHEET_ID);
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    renderSheet(data);
+  } catch(e) {
+    document.getElementById('sheet-content').innerHTML =
+      `<div class="msg error">Could not load sign-up sheet. ${e.message}</div>`;
+  }
+}
+
+// ── Render sheet ──
+function renderSheet(data) {
+  document.title = data.title || 'Sign-Up Sheet';
+  document.getElementById('sheet-title-display').textContent = data.title || 'Sign-Up Sheet';
+  document.getElementById('sheet-sub-display').textContent = data.subtitle || '';
+  _slots = data.slots || [];
+
+  // Group slots by blockId, then by date within block
+  const blockOrder = [];
+  const blockMap = {};
+  _slots.forEach(s => {
+    if (!blockMap[s.blockId]) {
+      blockMap[s.blockId] = { heading: s.blockHeading, isRecurring: s.isRecurring, firstDate: s.date, dates: {} };
+      blockOrder.push(s.blockId);
+    }
+    if (!blockMap[s.blockId].dates[s.date]) blockMap[s.blockId].dates[s.date] = [];
+    blockMap[s.blockId].dates[s.date].push(s);
+  });
+
+  let html = '';
+  blockOrder.forEach((blockId, bIdx) => {
+    const block = blockMap[blockId];
+    const dates = Object.keys(block.dates).sort();
+    html += `<div class="block-group">`;
+    // Only show heading above the first date of a recurring block
+    if (block.heading) html += `<div class="block-heading">${esc(block.heading)}</div>`;
+    dates.forEach((date, dIdx) => {
+      const slots = block.dates[date];
+      // For recurring blocks: show date label for every occurrence; for non-recurring single-date blocks, still show date
+      html += `<div class="block-date">${fmtDate(date)}</div>`;
+      slots.forEach(s => { html += renderSlotRow(s); });
+    });
+    html += `</div>`;
+  });
+
+  document.getElementById('sheet-content').innerHTML = html || '<div class="loading">No slots configured.</div>';
+}
+
+function renderSlotRow(s) {
+  const taken = !!s.studentName && s.studentName !== '' && !s.cancelled;
+  const cancelled = !!s.cancelled;
+  return `<div class="slot-row ${taken||cancelled?'taken':''}" id="slot-${s.id}">
+    <div class="slot-time">${s.startTime}${s.endTime?' – '+s.endTime:''}</div>
+    <div style="flex:1">
+      <div class="slot-name ${taken?'':'empty'}">${cancelled?'<span class="cancelled-badge">Cancelled</span>':taken?esc(s.studentName):'Open'}</div>
+      ${taken&&s.studentEmail?`<div class="slot-email">${esc(s.studentEmail)}</div>`:''}
+    </div>
+    ${!taken&&!cancelled?`<button class="btn-claim" onclick="openClaim('${s.id}')">Sign Up</button>`:''}
+  </div>`;
+}
+
+// ── Claim flow ──
+function openClaim(slotId) {
+  _claimSlotId = slotId;
+  const s = _slots.find(s=>s.id===slotId); if(!s) return;
+  document.getElementById('claim-slot-info').textContent = `${fmtDate(s.date)} · ${s.startTime}${s.endTime?' – '+s.endTime:''}`;
+  document.getElementById('claim-name').value = '';
+  document.getElementById('claim-email').value = '';
+  document.getElementById('btn-confirm-claim').disabled = false;
+  document.getElementById('modal-claim').classList.add('open');
+  setTimeout(()=>document.getElementById('claim-name').focus(), 100);
+}
+function closeClaim() { document.getElementById('modal-claim').classList.remove('open'); _claimSlotId=null; }
+
+async function confirmClaim() {
+  const name = document.getElementById('claim-name').value.trim();
+  const email = document.getElementById('claim-email').value.trim();
+  if (!name) { alert('Please enter your name.'); return; }
+  if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
+  document.getElementById('btn-confirm-claim').disabled = true;
+  document.getElementById('btn-confirm-claim').textContent = 'Saving…';
+  try {
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'claim', sheetId:SHEET_ID, slotId:_claimSlotId, name, email })
+    });
+    const result = await resp.json();
+    if (result.error) throw new Error(result.error);
+    // Update local slot
+    const s = _slots.find(s=>s.id===_claimSlotId);
+    if(s){s.studentName=name;s.studentEmail=email;}
+    closeClaim();
+    showMsg('You\'re signed up! A confirmation email has been sent to '+email+'.','success');
+    // Re-render just that row
+    const row = document.getElementById('slot-'+_claimSlotId);
+    if(row&&s) row.outerHTML = renderSlotRow(s);
+  } catch(e) {
+    document.getElementById('btn-confirm-claim').disabled = false;
+    document.getElementById('btn-confirm-claim').textContent = 'Confirm Sign-Up';
+    showMsg('Could not save — '+e.message+'. Please try again.','error');
+  }
+}
+
+// ── Helpers ──
+function fmtDate(d) {
+  if(!d) return '';
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(msg,type){ const el=document.getElementById('msg-area'); el.innerHTML=`<div class="msg ${type}">${msg}</div>`; setTimeout(()=>el.innerHTML='',6000); }
+
+// Close modal on overlay click
+document.getElementById('modal-claim').addEventListener('click',e=>{if(e.target===e.currentTarget)closeClaim();});
+
+// Load on start
+loadSheet();
+</script>
+</body>
+</html>
