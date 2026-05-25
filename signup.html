@@ -189,10 +189,10 @@ async function confirmClaim() {
   document.getElementById('btn-confirm-claim').disabled = true;
   document.getElementById('btn-confirm-claim').textContent = 'Saving…';
   try {
-    const resp = await fetch(APPS_SCRIPT_URL, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'claim', sheetId:SHEET_ID, slotId:_claimSlotId, name, email })
-    });
+    const payload = { sheetId: SHEET_ID, slotId: _claimSlotId, name, email };
+    const url = APPS_SCRIPT_URL + '?action=claim&payload=' + encodeURIComponent(JSON.stringify(payload));
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const result = await resp.json();
     if (result.error) throw new Error(result.error);
     // Update local slot
