@@ -30,6 +30,7 @@ header .sub{font-size:12px;color:var(--gray-400);letter-spacing:1px;text-transfo
 .slot-time{font-weight:600;font-size:14px;min-width:110px;flex-shrink:0;}
 .slot-name{flex:1;font-size:14px;}
 .slot-name.empty{color:var(--gray-400);font-style:italic;}
+.slot-role{font-size:12px;color:var(--gray-600);font-weight:400;}
 .slot-email{font-size:11px;color:var(--gray-400);}
 .btn-claim{padding:7px 16px;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;font-family:'Source Sans 3',sans-serif;}
 .btn-claim:active{opacity:.8;}
@@ -75,6 +76,18 @@ header .sub{font-size:12px;color:var(--gray-400);letter-spacing:1px;text-transfo
     <div class="form-group">
       <label>Your Name</label>
       <input type="text" id="claim-name" placeholder="First Last" autocomplete="name">
+    </div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="claim-role">
+        <option value="">— Select —</option>
+        <option value="Undergraduate Student">Undergraduate Student</option>
+        <option value="Graduate Student">Graduate Student</option>
+        <option value="Faculty">Faculty</option>
+        <option value="Guest Artist">Guest Artist</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="claim-role-other" placeholder="Please specify…" style="display:none;margin-top:6px">
     </div>
     <div class="form-group">
       <label>Your Email (for confirmation &amp; reminders)</label>
@@ -161,10 +174,11 @@ function renderSheet(data) {
 function renderSlotRow(s) {
   const taken = !!s.studentName && s.studentName !== '' && !s.cancelled;
   const cancelled = !!s.cancelled;
+  const nameDisplay = taken ? esc(s.studentName) + (s.role ? '<span class="slot-role"> · ' + esc(s.role) + '</span>' : '') : '';
   return `<div class="slot-row ${taken||cancelled?'taken':''}" id="slot-${s.id}">
     <div class="slot-time">${s.startTime}${s.endTime?' – '+s.endTime:''}</div>
     <div style="flex:1">
-      <div class="slot-name ${taken?'':'empty'}">${cancelled?'<span class="cancelled-badge">Cancelled</span>':taken?esc(s.studentName):'Open'}</div>
+      <div class="slot-name ${taken?'':'empty'}">${cancelled?'<span class="cancelled-badge">Cancelled</span>':taken?nameDisplay:'Open'}</div>
       ${taken&&s.studentEmail?`<div class="slot-email">${esc(s.studentEmail)}</div>`:''}
     </div>
     ${!taken&&!cancelled?`<button class="btn-claim" onclick="openClaim('${s.id}')">Sign Up</button>`:''}
@@ -184,26 +198,33 @@ function openClaim(slotId) {
 }
 function closeClaim() { document.getElementById('modal-claim').classList.remove('open'); _claimSlotId=null; }
 
+// Show/hide "other" text field
+document.getElementById('claim-role').addEventListener('change', function() {
+  document.getElementById('claim-role-other').style.display = this.value === 'Other' ? 'block' : 'none';
+});
+
 async function confirmClaim() {
   const name = document.getElementById('claim-name').value.trim();
   const email = document.getElementById('claim-email').value.trim();
+  const roleSelect = document.getElementById('claim-role').value;
+  const roleOther = document.getElementById('claim-role-other').value.trim();
+  const role = roleSelect === 'Other' ? (roleOther || 'Other') : roleSelect;
   if (!name) { alert('Please enter your name.'); return; }
+  if (!role) { alert('Please select your role.'); return; }
   if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
   document.getElementById('btn-confirm-claim').disabled = true;
   document.getElementById('btn-confirm-claim').textContent = 'Saving…';
   try {
-    const payload = { sheetId: SHEET_ID, slotId: _claimSlotId, name, email };
+    const payload = { sheetId: SHEET_ID, slotId: _claimSlotId, name, email, role };
     const url = APPS_SCRIPT_URL + '?action=claim&payload=' + encodeURIComponent(JSON.stringify(payload));
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const result = await resp.json();
     if (result.error) throw new Error(result.error);
-    // Update local slot
     const s = _slots.find(s=>s.id===_claimSlotId);
-    if(s){s.studentName=name;s.studentEmail=email;}
+    if(s){ s.studentName=name; s.studentEmail=email; s.role=role; }
     closeClaim();
     showMsg('You\'re signed up! A confirmation email has been sent to '+email+'.','success');
-    // Re-render just that row
     const row = document.getElementById('slot-'+_claimSlotId);
     if(row&&s) row.outerHTML = renderSlotRow(s);
   } catch(e) {
