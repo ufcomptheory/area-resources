@@ -145,7 +145,9 @@ async function renderSuSheetsList() {
 
 function suSheetCard(s) {
   const settings = STORE.settings.signups||{};
-  const publicUrl = settings.publicUrl ? settings.publicUrl+'?sheet='+s.id : '#';
+  const publicUrl = settings.publicUrl
+    ? settings.publicUrl + '?sheet=' + s.id + '&as=' + encodeURIComponent(settings.appsScriptUrl||'')
+    : '#';
   return `<div class="card mb-8">
     <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div style="flex:1">
