@@ -73,12 +73,67 @@ function getSheet(sheetId) {
   const slots = [];
   for (let i = 1; i < rows.length; i++) {
     if (!rows[i][0]) continue;
-    slots.push({ id: String(rows[i][0]), blockId: String(rows[i][1]), blockHeading: String(rows[i][2]||''),
-      isRecurring: !!rows[i][3], date: String(rows[i][4]), startTime: String(rows[i][5]),
-      endTime: String(rows[i][6]||''), studentName: String(rows[i][7]||''),
-      studentEmail: String(rows[i][8]||''), cancelled: !!rows[i][9] });
+    slots.push({
+      id: String(rows[i][0]),
+      blockId: String(rows[i][1]),
+      blockHeading: String(rows[i][2]||''),
+      isRecurring: !!rows[i][3],
+      date: normalizeDate(rows[i][4]),
+      startTime: normalizeTime(rows[i][5]),
+      endTime: normalizeTime(rows[i][6]||''),
+      studentName: String(rows[i][7]||''),
+      studentEmail: String(rows[i][8]||''),
+      cancelled: !!rows[i][9]
+    });
   }
   return { ...meta, slots };
+}
+
+// Normalize a cell value to YYYY-MM-DD string regardless of how Sheets stored it
+function normalizeDate(val) {
+  if (!val && val !== 0) return '';
+  // Already a plain string like "2026-09-04"
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) return val.trim();
+  // Sheets returned a Date object
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth()+1).padStart(2,'0');
+    const d = String(val.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+d;
+  }
+  // Sheets returned a number (serial date) — convert
+  if (typeof val === 'number') {
+    // Google Sheets serial: days since Dec 30 1899
+    const ms = (val - 25569) * 86400000; // 25569 = days from 1899-12-30 to 1970-01-01
+    const dt = new Date(ms);
+    const y = dt.getUTCFullYear();
+    const mo = String(dt.getUTCMonth()+1).padStart(2,'0');
+    const d = String(dt.getUTCDate()).padStart(2,'0');
+    return y+'-'+mo+'-'+d;
+  }
+  return String(val);
+}
+
+// Normalize a cell value to "H:MM AM/PM" string
+function normalizeTime(val) {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string' && val.trim() !== '') return val.trim();
+  // Sheets time as fractional day number (e.g. 0.5 = noon)
+  if (typeof val === 'number') {
+    const totalMins = Math.round(val * 24 * 60);
+    const h = Math.floor(totalMins / 60) % 24;
+    const m = totalMins % 60;
+    const ap = h >= 12 ? 'PM' : 'AM';
+    const hh = h % 12 || 12;
+    return hh + ':' + String(m).padStart(2,'0') + ' ' + ap;
+  }
+  if (val instanceof Date) {
+    const h = val.getHours(), m = val.getMinutes();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    const hh = h % 12 || 12;
+    return hh + ':' + String(m).padStart(2,'0') + ' ' + ap;
+  }
+  return String(val);
 }
 
 function claimSlot(data) {
@@ -138,7 +193,19 @@ function createSheet(data) {
   const headers = ['id','blockId','blockHeading','isRecurring','date','startTime','endTime','studentName','studentEmail','cancelled'];
   slotsSheet.appendRow(headers);
   slotsSheet.getRange(1,1,1,headers.length).setFontWeight('bold').setBackground('#1a2744').setFontColor('#ffffff');
-  slots.forEach(s => slotsSheet.appendRow([s.id, s.blockId, s.blockHeading||'', s.isRecurring||false, s.date, s.startTime, s.endTime||'', '', '', false]));
+  // Force date (col 5) and time (cols 6,7) columns to plain text so Sheets doesn't
+  // interpret them as date/time serial numbers
+  slotsSheet.getRange(1, 5, slots.length+1, 3).setNumberFormat('@STRING@');
+  slots.forEach(s => slotsSheet.appendRow([
+    String(s.id),
+    String(s.blockId),
+    String(s.blockHeading||''),
+    s.isRecurring ? 'true' : 'false',
+    String(s.date),       // YYYY-MM-DD plain string
+    String(s.startTime),  // "2:00 PM" plain string
+    String(s.endTime||''),
+    '', '', 'false'
+  ]));
   slotsSheet.autoResizeColumns(1, headers.length);
   return { ok: true, sheetId };
 }
