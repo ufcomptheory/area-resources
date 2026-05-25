@@ -20,13 +20,14 @@ function doGet(e) {
   try {
     if (action === 'getSheet')    return jsonResponse(getSheet(e.parameter.sheetId));
     if (action === 'listSheets')  return jsonResponse(listSheets());
-    if (['claim','cancel','createSheet','deleteSheet'].includes(action)) {
+    if (['claim','cancel','createSheet','deleteSheet','seedCalendar'].includes(action)) {
       const data = JSON.parse(decodeURIComponent(e.parameter.payload || '{}'));
       data.action = action;
-      if (action === 'claim')       return jsonResponse(claimSlot(data));
-      if (action === 'cancel')      return jsonResponse(cancelSlot(data));
-      if (action === 'createSheet') return jsonResponse(createSheet(data));
-      if (action === 'deleteSheet') return jsonResponse(deleteSheet(data));
+      if (action === 'claim')         return jsonResponse(claimSlot(data));
+      if (action === 'cancel')        return jsonResponse(cancelSlot(data));
+      if (action === 'createSheet')   return jsonResponse(createSheet(data));
+      if (action === 'deleteSheet')   return jsonResponse(deleteSheet(data));
+      if (action === 'seedCalendar')  return jsonResponse(seedCalendar(data));
     }
     return jsonResponse({ error: 'Unknown action: ' + action });
   } catch(err) { return jsonResponse({ error: err.message }); }
@@ -184,7 +185,7 @@ function cancelSlot(data) {
   throw new Error('Slot not found');
 }
 
-// ── Create a sheet and optionally seed calendar events ──
+// ── Create a sheet (writes rows only — calendar seeded separately) ──
 function createSheet(data) {
   const { title, subtitle, slots, sheetId, syncCalendar, calendarId } = data;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -217,20 +218,38 @@ function createSheet(data) {
     '', '', 'false', '', ''
   ]));
   slotsSheet.autoResizeColumns(1, headers.length);
-
-  // Seed Google Calendar events (one per unique date)
-  if (syncCalendar) {
-    try {
-      const sheetMeta = { title, calendarId: calendarId||'primary', syncCalendar: true };
-      const allRows = slotsSheet.getDataRange().getValues();
-      const uniqueDates = [...new Set(slots.map(s=>s.date))];
-      uniqueDates.forEach(date => {
-        syncSessionCalendarEvent(slotsSheet, allRows, sheetId, date, sheetMeta);
-      });
-    } catch(e) { Logger.log('Calendar seed error: '+e.message); }
-  }
-
   return { ok: true, sheetId };
+}
+
+// ── Seed calendar events for a sheet (called separately after createSheet) ──
+// Creates one event per unique session date spanning the full session duration.
+function seedCalendar(data) {
+  const { sheetId } = data;
+  const sheetMeta = getSheetMeta(sheetId);
+  if (!sheetMeta.syncCalendar) return { ok: true, skipped: true };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const slotsSheet = ss.getSheetByName(SLOTS_SHEET_PREFIX + sheetId);
+  if (!slotsSheet) throw new Error('Slots sheet not found for id: ' + sheetId);
+  const allRows = slotsSheet.getDataRange().getValues();
+  // Get unique dates
+  const uniqueDates = [];
+  const seen = new Set();
+  for (let i = 1; i < allRows.length; i++) {
+    const d = normalizeDate(allRows[i][COL.DATE]);
+    if (d && !seen.has(d)) { seen.add(d); uniqueDates.push(d); }
+  }
+  const created = [];
+  const errors = [];
+  uniqueDates.forEach(date => {
+    try {
+      syncSessionCalendarEvent(slotsSheet, allRows, sheetId, date, sheetMeta);
+      created.push(date);
+    } catch(e) {
+      errors.push(date + ': ' + e.message);
+      Logger.log('seedCalendar error for ' + date + ': ' + e.message);
+    }
+  });
+  return { ok: true, created, errors };
 }
 
 // ── Delete a sheet and its calendar events ──
