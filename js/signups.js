@@ -157,6 +157,7 @@ function suSheetCard(s) {
           <a href="${publicUrl}" target="_blank" class="btn btn-primary btn-xs">🔗 Open Sign-Up Page</a>
           <button class="btn btn-outline btn-xs" onclick="copySuLink('${esc(publicUrl)}')">📋 Copy Link</button>
           <button class="btn btn-outline btn-xs" onclick="loadSuSlots('${s.id}')">👁 View Slots</button>
+          <button class="btn btn-outline btn-xs" onclick="seedSuCalendar('${s.id}')">📅 Sync Calendar</button>
           <button class="btn btn-outline btn-xs" onclick="importSuPresentations('${s.id}')">⬇ Import to Presentations</button>
           <button class="btn btn-danger btn-xs" onclick="deleteSuSheet('${s.id}')">Delete</button>
         </div>
@@ -168,6 +169,21 @@ function suSheetCard(s) {
 
 window.copySuLink = function(url) {
   navigator.clipboard.writeText(url).then(()=>showToast('Link copied to clipboard','success')).catch(()=>{});
+};
+
+window.seedSuCalendar = async function(sheetId) {
+  const url = (STORE.settings.signups||{}).appsScriptUrl;
+  if (!url) { showToast('Apps Script URL not configured.','error'); return; }
+  showToast('Syncing calendar events…','info');
+  try {
+    const result = await asGet(url, 'seedCalendar', { sheetId });
+    if (result.skipped) { showToast('Calendar sync is not enabled for this sheet.','info'); return; }
+    if (result.errors && result.errors.length) {
+      showToast('Created ' + result.created.length + ' event(s). Errors: ' + result.errors.join('; '),'info');
+    } else {
+      showToast('✅ ' + (result.created||[]).length + ' calendar event(s) created or updated.','success');
+    }
+  } catch(e) { showToast('Calendar sync failed: '+e.message,'error'); }
 };
 
 window.loadSuSlots = async function(sheetId) {
@@ -422,7 +438,23 @@ window.publishSuSheet = async function() {
         throw fetchErr;
       }
     }
-    showToast('Sheet published!' + (syncCalendar?' Calendar events created.':'') + ' Switching to Sheets tab.','success');
+    showToast('Sheet published! ' + (syncCalendar ? 'Creating calendar events…' : 'Switching to Sheets tab.'), 'success');
+
+    // If calendar sync requested, make a second separate call to seed events
+    // (split to avoid Apps Script 30-second timeout)
+    if (syncCalendar) {
+      try {
+        const calResult = await asGet(settings.appsScriptUrl, 'seedCalendar', { sheetId });
+        if (calResult.errors && calResult.errors.length) {
+          showToast('Calendar: ' + calResult.created.length + ' events created. Errors: ' + calResult.errors.join('; '), 'info');
+        } else if (calResult.created) {
+          showToast('✅ ' + calResult.created.length + ' calendar event' + (calResult.created.length !== 1 ? 's' : '') + ' created.', 'success');
+        }
+      } catch(calErr) {
+        showToast('Sheet published but calendar sync failed: ' + calErr.message + '. Try re-seeding from the Sheets tab.', 'info');
+      }
+    }
+
     _suBlocks=[];
     document.getElementById('su-title').value='';
     document.getElementById('su-subtitle').value='';
