@@ -1,6 +1,10 @@
 // ═══════════════════════════════════════════════════════════════
 // AREA HEAD SIGN-UP SHEETS — Google Apps Script backend
 // Deploy as: Web app, Execute as: Me, Who has access: Anyone
+//
+// NOTE: All actions go through doGet to avoid CORS preflight issues
+// with cross-origin POST requests from browser-based apps.
+// Data payloads are passed as a URL-encoded JSON "payload" parameter.
 // ═══════════════════════════════════════════════════════════════
 
 const MASTER_SHEET_NAME = 'SignUpSheets';
@@ -10,12 +14,23 @@ const LOG_SHEET = 'EmailLog';
 function doGet(e) {
   const action = e.parameter.action || '';
   try {
+    // Read actions — params come directly from URL
     if (action === 'getSheet') return jsonResponse(getSheet(e.parameter.sheetId));
     if (action === 'listSheets') return jsonResponse(listSheets());
-    return jsonResponse({ error: 'Unknown action' });
+    // Write actions — payload is JSON-encoded in the "payload" param
+    if (action === 'claim' || action === 'cancel' || action === 'createSheet' || action === 'deleteSheet') {
+      const data = JSON.parse(decodeURIComponent(e.parameter.payload || '{}'));
+      data.action = action;
+      if (action === 'claim') return jsonResponse(claimSlot(data));
+      if (action === 'cancel') return jsonResponse(cancelSlot(data));
+      if (action === 'createSheet') return jsonResponse(createSheet(data));
+      if (action === 'deleteSheet') return jsonResponse(deleteSheet(data));
+    }
+    return jsonResponse({ error: 'Unknown action: ' + action });
   } catch(err) { return jsonResponse({ error: err.message }); }
 }
 
+// doPost kept for compatibility but all browser calls now use doGet
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
