@@ -165,13 +165,14 @@ function cancelSlot(data) {
       const studentEmail = String(rows[i][COL.EMAIL]||'');
       const studentName  = String(rows[i][COL.NAME]||'');
       const slotDate     = normalizeDate(rows[i][COL.DATE]);
+      // Clear name, email, role — reset to open (cancelled stays false so slot is re-claimable)
       slotsSheet.getRange(i+1, COL.NAME+1).setValue('');
       slotsSheet.getRange(i+1, COL.EMAIL+1).setValue('');
       slotsSheet.getRange(i+1, COL.ROLE+1).setValue('');
-      slotsSheet.getRange(i+1, COL.CANCELLED+1).setValue('true');
+      slotsSheet.getRange(i+1, COL.CANCELLED+1).setValue('false');
       if (studentEmail) sendCancellation(studentName, studentEmail,
         slotDate, normalizeTime(rows[i][COL.START]), normalizeTime(rows[i][COL.END]||''));
-      // Re-read and sync calendar
+      // Re-read and sync calendar (slot now open, title reverts to generic)
       const sheetMeta = getSheetMeta(sheetId);
       if (sheetMeta.syncCalendar) {
         try {
