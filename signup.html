@@ -175,13 +175,12 @@ function renderSlotRow(s) {
   const taken = !!s.studentName && s.studentName !== '' && !s.cancelled;
   const cancelled = !!s.cancelled;
   const nameDisplay = taken ? esc(s.studentName) + (s.role ? '<span class="slot-role"> · ' + esc(s.role) + '</span>' : '') : '';
-  return `<div class="slot-row ${taken||cancelled?'taken':''}" id="slot-${s.id}">
+  return `<div class="slot-row ${taken?'taken':''}" id="slot-${s.id}">
     <div class="slot-time">${s.startTime}${s.endTime?' – '+s.endTime:''}</div>
     <div style="flex:1">
-      <div class="slot-name ${taken?'':'empty'}">${cancelled?'<span class="cancelled-badge">Cancelled</span>':taken?nameDisplay:'Open'}</div>
-      ${taken&&s.studentEmail?`<div class="slot-email">${esc(s.studentEmail)}</div>`:''}
+      <div class="slot-name ${taken?'':'empty'}">${taken ? nameDisplay : 'Open'}</div>
     </div>
-    ${!taken&&!cancelled?`<button class="btn-claim" onclick="openClaim('${s.id}')">Sign Up</button>`:''}
+    ${!taken ? `<button class="btn-claim" onclick="openClaim('${s.id}')">Sign Up</button>` : ''}
   </div>`;
 }
 
