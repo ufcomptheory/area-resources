@@ -9,6 +9,8 @@ function initApp() {
   populateSettings();
   setupEventHandlers();
   setupSignupHandlers();
+  setupSubmissionHandlers();
+  setupArchiveHandlers();
   renderPage('dashboard');
 }
 
@@ -50,7 +52,7 @@ function renderPage(page) {
     dashboard: renderDashboard, calendar: renderCalendar, tasks: renderTasks,
     meetings: renderMeetings, rotations: renderRotations, gta: renderGTA,
     studio: renderStudio, students: renderStudents, faculty: renderFaculty,
-    presentations: renderPresentations, admissions: renderAdmissions, settings: renderSettings, signups: renderSignups
+    presentations: renderPresentations, admissions: renderAdmissions, settings: renderSettings, signups: renderSignups, submissions: renderSubmissions, archive: renderArchive
   };
   if (map[page]) map[page]();
 }
@@ -185,7 +187,19 @@ function renderTasks() {
   list.sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
   document.getElementById('tasks-tbody').innerHTML = list.map(t=>`<tr class="${t.done?'completed':''}">
     <td>${t.due?fmtDate(t.due):'—'}</td>
-    <td><strong>${t.title}</strong>${t.notes?`<div class="text-muted" style="font-size:11px">${t.notes}</div>`:''}</td>
+    <td>
+      <strong>${t.title}</strong>
+      ${t.notes?`<div class="text-muted" style="font-size:11px">${t.notes}</div>`:''}
+      ${t.emailTemplate?`
+        <div style="margin-top:6px">
+          <button class="btn btn-outline btn-xs" onclick="toggleEmailTemplate('${t.id}')">✉ Email Template</button>
+          <div id="email-tpl-${t.id}" style="display:none;margin-top:6px">
+            <textarea rows="5" style="width:100%;font-size:12px;font-family:'Source Code Pro',monospace"
+              onchange="updateTaskEmailTemplate('${t.id}',this.value)">${t.emailTemplate.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+            <button class="btn btn-outline btn-xs" style="margin-top:4px" onclick="copyEmailTemplate('${t.id}')">📋 Copy to Clipboard</button>
+          </div>
+        </div>` : ''}
+    </td>
     <td><span class="pill pill-gray">${t.freq}</span></td>
     <td><span class="pill ${t.urg==='high'?'pill-red':t.urg==='med'?'pill-gold':'pill-green'}">${t.urg||'low'}</span></td>
     <td>${t.done?'<span class="pill pill-green">Done</span>':'<span class="pill pill-gold">Pending</span>'}</td>
@@ -197,6 +211,21 @@ function renderTasks() {
     </td>
   </tr>`).join('') || '<tr><td colspan="7" class="text-muted" style="padding:16px">No tasks.</td></tr>';
 }
+window.toggleEmailTemplate = function(id) {
+  const el = document.getElementById('email-tpl-'+id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+window.copyEmailTemplate = function(id) {
+  const t = STORE.tasks.find(t=>t.id===id);
+  if (!t || !t.emailTemplate) return;
+  navigator.clipboard.writeText(t.emailTemplate)
+    .then(()=>showToast('Email template copied to clipboard','success'))
+    .catch(()=>showToast('Could not copy — try selecting the text manually','error'));
+};
+window.updateTaskEmailTemplate = function(id, val) {
+  const t = STORE.tasks.find(t=>t.id===id); if(!t) return;
+  t.emailTemplate = val; save();
+};
 window.toggleTask = function(id) {
   const t = STORE.tasks.find(t=>t.id===id); if(!t) return;
   t.done = !t.done;
@@ -261,6 +290,7 @@ window.editTask = function(id) {
   document.getElementById('task-urg').value = t.urg||'med';
   document.getElementById('task-freq').value = t.freq||'Once';
   document.getElementById('task-notes').value = t.notes||'';
+  document.getElementById('task-email-tpl').value = t.emailTemplate||'';
   openModal('modal-task');
 };
 
@@ -818,86 +848,70 @@ window.openPersonModal = function(id) {
 // ═══════════════════════════════════
 // PRESENTATIONS
 // ═══════════════════════════════════
-function getAcademicYearSemesters(yearStart) {
-  // Returns ['Fall YYYY', 'Spring YYYY+1'] for a given fall start year
-  return ['Fall '+yearStart, 'Spring '+(yearStart+1)];
-}
-
 function renderPresentations() {
-  const semSel = document.getElementById('pres-sem-filter');
-  const stuSel = document.getElementById('pres-stu-filter');
-  const viewSel = document.getElementById('pres-view-select');
+  const fromSel = document.getElementById('pres-from-filter');
+  const toSel   = document.getElementById('pres-to-filter');
+  const stuSel  = document.getElementById('pres-stu-filter');
+  if (!fromSel) return;
+
   const curSem = STORE.settings.currentSemester;
-
-  // Build semester options from existing presentation data plus current semester
   const existingSems = [...new Set(STORE.presentations.map(p=>p.semester))];
-  const allSems = [...new Set([...existingSems, curSem])].sort((a,b)=>semKey(b).localeCompare(semKey(a)));
+  const allSems = [...new Set([...existingSems, curSem])]
+    .sort((a,b) => semKey(a).localeCompare(semKey(b))); // chronological
 
-  // Build academic year options (Fall YYYY – Spring YYYY+1)
-  const ayYears = new Set();
-  allSems.forEach(s => {
-    const m = String(s).match(/(Fall|Spring)\s+(\d{4})/i);
-    if (!m) return;
-    const y = parseInt(m[2]);
-    if (m[1].toLowerCase()==='fall') ayYears.add(y);
-    else ayYears.add(y-1);
-  });
-  const ayOpts = [...ayYears].sort((a,b)=>b-a)
-    .map(y=>`<option value="ay-${y}">Academic Year ${y}–${y+1}</option>`).join('');
+  const prevFrom = fromSel.value, prevTo = toSel.value, prevStu = stuSel.value;
+  const semOpts = allSems.map(s => `<option value="${s}">${s}</option>`).join('');
+  fromSel.innerHTML = '<option value="">Earliest</option>' + semOpts;
+  toSel.innerHTML   = '<option value="">Latest</option>'   + semOpts;
+  stuSel.innerHTML  = '<option value="">All students</option>' +
+    allStudents().map(s=>`<option>${s.name}</option>`).join('');
 
-  const prevSemVal = semSel.value;
-  semSel.innerHTML = '<option value="">All semesters</option>' +
-    allSems.map(s=>`<option${(prevSemVal||(allSems.includes(curSem)?curSem:''))===s?' selected':''}>${s}</option>`).join('');
-  if (!prevSemVal && allSems.includes(curSem)) semSel.value = curSem;
+  // Restore previous selections
+  if (prevFrom) fromSel.value = prevFrom;
+  if (prevTo)   toSel.value   = prevTo;
+  if (prevStu)  stuSel.value  = prevStu;
 
-  // View selector: semester or academic year
-  if (viewSel) {
-    const prevView = viewSel.value;
-    viewSel.innerHTML = '<option value="semester">By Semester</option>' + ayOpts;
-    if (prevView) viewSel.value = prevView;
-  }
+  // Default to-filter to current semester if nothing set
+  if (!toSel.value && allSems.includes(curSem)) toSel.value = curSem;
 
-  stuSel.innerHTML = '<option value="">All students</option>' +
-    allStudents().map(s=>`<option${s.name===stuSel.value?' selected':''}>${s.name}</option>`).join('');
-
-  // Determine active filter
-  const viewMode = viewSel ? viewSel.value : 'semester';
-  let coverageSems = [];
-  let listFilter = null;
-
-  if (viewMode && viewMode.startsWith('ay-')) {
-    const yr = parseInt(viewMode.replace('ay-',''));
-    coverageSems = getAcademicYearSemesters(yr);
-    listFilter = p => coverageSems.includes(p.semester);
-  } else {
-    const semFilter = semSel.value || curSem;
-    coverageSems = semFilter ? [semFilter] : allSems;
-    listFilter = semSel.value ? (p=>p.semester===semSel.value) : null;
-  }
-
+  // Filter presentations
   let list = [...STORE.presentations];
-  if (listFilter) list = list.filter(listFilter);
-  if (stuSel.value) list = list.filter(p=>p.student===stuSel.value);
-  list.sort((a,b)=>b.date.localeCompare(a.date));
+  const fromKey = fromSel.value ? semKey(fromSel.value) : null;
+  const toKey   = toSel.value   ? semKey(toSel.value)   : null;
+  if (fromKey) list = list.filter(p => semKey(p.semester) >= fromKey);
+  if (toKey)   list = list.filter(p => semKey(p.semester) <= toKey);
+  if (stuSel.value) list = list.filter(p => p.student === stuSel.value);
+  list.sort((a,b) => b.date.localeCompare(a.date));
 
-  // Coverage — who has and hasn't presented
-  const presentedInScope = new Set(
-    STORE.presentations.filter(p=>coverageSems.includes(p.semester)).map(p=>p.student)
+  // Coverage — semesters in current filter range
+  const inRangeSems = allSems.filter(s => {
+    const k = semKey(s);
+    return (!fromKey || k >= fromKey) && (!toKey || k <= toKey);
+  });
+  const presentedInRange = new Set(
+    STORE.presentations
+      .filter(p => inRangeSems.includes(p.semester))
+      .map(p=>p.student)
   );
   const activeStudents = students().sort((a,b)=>lastName(a.name).localeCompare(lastName(b.name)));
-  const hasPresented = activeStudents.filter(s=>presentedInScope.has(s.name));
-  const notYet = activeStudents.filter(s=>!presentedInScope.has(s.name));
-  const scopeLabel = viewMode&&viewMode.startsWith('ay-')
-    ? `Academic Year ${viewMode.replace('ay-','')}–${parseInt(viewMode.replace('ay-',''))+1}`
-    : (semSel.value||curSem);
+  const hasPresented = activeStudents.filter(s=>presentedInRange.has(s.name));
+  const notYet       = activeStudents.filter(s=>!presentedInRange.has(s.name));
+
+  const rangeLabel = fromSel.value && toSel.value && fromSel.value !== toSel.value
+    ? `${fromSel.value} – ${toSel.value}`
+    : toSel.value || fromSel.value || 'All time';
 
   const coverageHtml = `
-    <div style="margin-bottom:10px;font-size:13px;font-weight:600">${scopeLabel}: ${presentedInScope.size}/${activeStudents.length} students have presented</div>
+    <div style="margin-bottom:10px;font-size:13px;font-weight:600">${rangeLabel}: ${presentedInRange.size}/${activeStudents.length} active students have presented</div>
     <div style="display:flex;gap:20px;flex-wrap:wrap">
-      ${hasPresented.length ? `<div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:4px">✓ Presented (${hasPresented.length})</div>
-        ${hasPresented.map(s=>`<span style="display:inline-block;background:#d4edda;color:var(--green);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}</div>` : ''}
-      ${notYet.length ? `<div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--red);margin-bottom:4px">✗ Not Yet (${notYet.length})</div>
-        ${notYet.map(s=>`<span style="display:inline-block;background:#fde8e6;color:var(--red);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}</div>` : ''}
+      ${hasPresented.length ? `<div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:4px">✓ Presented (${hasPresented.length})</div>
+        ${hasPresented.map(s=>`<span style="display:inline-block;background:#d4edda;color:var(--green);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}
+      </div>` : ''}
+      ${notYet.length ? `<div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--red);margin-bottom:4px">✗ Not Yet (${notYet.length})</div>
+        ${notYet.map(s=>`<span style="display:inline-block;background:#fde8e6;color:var(--red);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}
+      </div>` : ''}
     </div>`;
   document.getElementById('pres-coverage').innerHTML = coverageHtml;
 
@@ -905,7 +919,7 @@ function renderPresentations() {
     <td>${fmtDate(p.date)}</td><td>${p.semester}</td><td><strong>${p.student}</strong></td>
     <td style="font-size:12px">${p.notes||''}</td>
     <td><button class="btn btn-danger btn-xs" onclick="delPres('${p.id}')">✕</button></td>
-  </tr>`).join('') || '<tr><td colspan="5" class="text-muted" style="padding:16px">No presentations logged.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="5" class="text-muted" style="padding:16px">No presentations in this range.</td></tr>';
 }
 window.delPres=function(id){STORE.presentations=STORE.presentations.filter(p=>p.id!==id);save();renderPresentations();};
 
@@ -1295,8 +1309,16 @@ function setupEventHandlers() {
   });
 
   // Presentations
-  document.getElementById('pres-sem-filter').addEventListener('change',renderPresentations);
-  const presViewSel=document.getElementById('pres-view-select'); if(presViewSel) presViewSel.addEventListener('change',renderPresentations);
+  ['pres-from-filter','pres-to-filter','pres-stu-filter'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.addEventListener('change',renderPresentations);
+  });
+  const btnPresClear=document.getElementById('btn-pres-clear-filter');
+  if(btnPresClear) btnPresClear.addEventListener('click',()=>{
+    ['pres-from-filter','pres-to-filter','pres-stu-filter'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='';
+    });
+    renderPresentations();
+  });
   document.getElementById('pres-stu-filter').addEventListener('change',renderPresentations);
   document.getElementById('btn-add-pres').addEventListener('click',()=>{
     document.getElementById('pres-student').innerHTML=students().map(s=>`<option>${s.name}</option>`).join('');
