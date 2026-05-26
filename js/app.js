@@ -90,7 +90,8 @@ function lastName(name) {
   return parts[parts.length-1].toLowerCase();
 }
 
-function compFaculty() { return STORE.people.filter(p => p.type==='faculty' && Array.isArray(p.areas) && p.areas.includes('Composition')); }
+function compFaculty() { return STORE.people.filter(p => p.type==='faculty' && p.active!==false && Array.isArray(p.areas) && p.areas.includes('Composition')); }
+function allFaculty() { return STORE.people.filter(p => p.type==='faculty'); }
 function students() { return STORE.people.filter(p => p.type==='student' && p.active !== false); }
 function allStudents() { return STORE.people.filter(p => p.type==='student'); }
 
@@ -196,7 +197,50 @@ function renderTasks() {
     </td>
   </tr>`).join('') || '<tr><td colspan="7" class="text-muted" style="padding:16px">No tasks.</td></tr>';
 }
-window.toggleTask = function(id) { const t=STORE.tasks.find(t=>t.id===id); if(t) t.done=!t.done; save(); renderTasks(); };
+window.toggleTask = function(id) {
+  const t = STORE.tasks.find(t=>t.id===id); if(!t) return;
+  t.done = !t.done;
+  // Auto-generate next instance when a recurring task is marked done
+  if (t.done && t.freq !== 'Once') {
+    const next = generateNextTask(t);
+    if (next) STORE.tasks.push(next);
+  }
+  save(); renderTasks();
+};
+
+function nextSemesterDate(dueDateStr, freq) {
+  // Given a due date string, calculate the next due date for the next semester/year.
+  // For Semester: Fall → Spring (add ~5 months), Spring → Fall (add ~7 months). Skip Summer.
+  // For Annual: add exactly 12 months.
+  if (!dueDateStr) return null;
+  const d = new Date(dueDateStr + 'T00:00:00');
+  if (freq === 'Annual') {
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0,10);
+  }
+  if (freq === 'Semester') {
+    const m = d.getMonth(); // 0-based
+    if (m >= 7) {
+      // Fall (Aug–Dec) → Spring of next year: add ~5 months (set to same day, month+5)
+      d.setMonth(m - 3); // roughly Oct→Mar, Nov→Apr etc
+      d.setFullYear(d.getFullYear() + 1);
+    } else {
+      // Spring (Jan–Jul) → Fall of same year: add ~6 months
+      d.setMonth(m + 6);
+    }
+    return d.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+function generateNextTask(t) {
+  const nextDue = nextSemesterDate(t.due, t.freq);
+  if (!nextDue) return null;
+  // Don't duplicate — check if a pending instance already exists
+  const exists = STORE.tasks.find(x => x.title === t.title && !x.done && x.id !== t.id);
+  if (exists) return null;
+  return { id: uid(), title: t.title, due: nextDue, urg: t.urg||'med', freq: t.freq, notes: t.notes||'', done: false, gcalId: null };
+}
 window.delTask = async function(id) {
   const t=STORE.tasks.find(t=>t.id===id);
   if(t&&t.gcalId) await calDeleteEvent(t.gcalId);
@@ -364,19 +408,53 @@ function rotRow(r){return `<tr><td><strong>${r.course}</strong></td>
   <td>${r.fall?`<span class="pill ${r.fall.includes('GTA')?'pill-gold':'pill-navy'}">${r.fall}</span>`:''}</td>
   <td>${r.spring?`<span class="pill ${r.spring.includes('GTA')?'pill-gold':'pill-navy'}">${r.spring}</span>`:''}</td></tr>`;}
 function renderRotations() {
-  // Use STORE versions if they exist, otherwise seed from constants
-  if(!STORE.rot2627||!STORE.rot2627.length) STORE.rot2627=ROT_2627.map(r=>({...r,summer:''}));
-  if(!STORE.rot2728||!STORE.rot2728.length) STORE.rot2728=ROT_2728.map(r=>({...r,summer:''}));
+  if(!STORE.rot2627||!STORE.rot2627.length) STORE.rot2627=ROT_2627.map(r=>({...r,summer:'',note:''}));
+  if(!STORE.rot2728||!STORE.rot2728.length) STORE.rot2728=ROT_2728.map(r=>({...r,summer:'',note:''}));
   renderRotTable('rot-2627-tbody',STORE.rot2627,'rot2627');
   renderRotTable('rot-2728-tbody',STORE.rot2728,'rot2728');
   renderScenarios();
 }
+window.exportRotation = function(key) {
+  const data = key==='rot2627' ? STORE.rot2627 : STORE.rot2728;
+  const label = key==='rot2627' ? '26/27' : '27/28';
+  const prefixes = ['MUC','MUT','MUS'];
+  let txt = 'COMPOSITION, THEORY & TECHNOLOGY\nCourse Rotations — ' + label + '\n\n';
+  prefixes.forEach(prefix => {
+    const rows = data.filter(r=>r.course.startsWith(prefix));
+    if (!rows.length) return;
+    txt += prefix + '\n';
+    txt += [' Course'.padEnd(40), 'Fall'.padEnd(25), 'Spring'].join('\t') + '\n';
+    txt += '-'.repeat(80) + '\n';
+    rows.forEach(r => {
+      const note = r.note ? ' *' : '';
+      txt += [(r.course+note).padEnd(40), (r.fall||'').padEnd(25), r.spring||''].join('\t') + '\n';
+    });
+    // Summer courses for this prefix
+    const summerRows = rows.filter(r=>r.summer);
+    if (summerRows.length) {
+      txt += '\nSummer:\n';
+      summerRows.forEach(r=>{ txt += '  '+r.course+': '+r.summer+'\n'; });
+    }
+    // Notes/footnotes
+    const noteRows = rows.filter(r=>r.note);
+    if (noteRows.length) {
+      txt += '\n';
+      noteRows.forEach(r=>{ txt += '* '+r.note+'\n'; });
+    }
+    txt += '\n';
+  });
+  txt += '\nNote: Subject to change based upon faculty loads and the needs of the area.\n';
+  const blob = new Blob([txt],{type:'text/plain'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='CourseRotations_'+key+'_'+today()+'.txt'; a.click();
+};
 function renderRotTable(tbodyId,data,key) {
   document.getElementById(tbodyId).innerHTML=data.map((r,i)=>`<tr>
-    <td><span style="font-weight:600">${r.course}</span></td>
+    <td><span style="font-weight:600">${r.course}${r.note?'<sup style="color:var(--gold);font-weight:700"> *</sup>':''}</span></td>
     <td>${r.fall?`<span class="pill ${r.fall.includes('GTA')?'pill-gold':'pill-navy'}">${r.fall}</span>`:''}</td>
     <td>${r.spring?`<span class="pill ${r.spring.includes('GTA')?'pill-gold':'pill-navy'}">${r.spring}</span>`:''}</td>
     <td>${r.summer?`<span class="pill pill-blue">${r.summer}</span>`:''}</td>
+    <td style="font-size:11px;color:var(--gray-400);max-width:160px">${r.note||''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-outline btn-xs" onclick="editRotCourse('${key}',${i})">✎</button>
       <button class="btn btn-danger btn-xs" onclick="delRotCourse('${key}',${i})">✕</button>
@@ -390,6 +468,7 @@ window.editRotCourse=function(key,idx){
   const fall=prompt('Fall instructor (blank = none):',r.fall||''); r.fall=fall;
   const spring=prompt('Spring instructor (blank = none):',r.spring||''); r.spring=spring;
   const summer=prompt('Summer instructor (blank = none):',r.summer||''); r.summer=summer;
+  const note=prompt('Footnote/asterisk note (blank = none):',r.note||''); r.note=note||'';
   save(); renderRotations();
 };
 window.delRotCourse=function(key,idx){
@@ -429,7 +508,35 @@ window.updateScenarioCourse=function(scId,idx,field,val){const sc=STORE.rotation
 // ═══════════════════════════════════
 // GTA
 // ═══════════════════════════════════
+
+// ═══════════════════════════════════
+// GTA DUTIES
+// ═══════════════════════════════════
+function renderGTADuties() {
+  const el = document.getElementById('gta-duties-list');
+  if (!el) return;
+  const duties = STORE.settings.gtaDuties || getDefaultGTADuties();
+  if (!STORE.settings.gtaDuties) STORE.settings.gtaDuties = duties;
+  el.innerHTML = duties.map((d, i) => `
+    <div style="margin-bottom:16px;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden">
+      <div style="background:var(--navy);color:var(--white);padding:8px 14px;display:flex;align-items:center;gap:10px">
+        <input type="text" value="${esc(d.role)}" style="flex:1;background:transparent;border:none;color:var(--white);font-size:13px;font-weight:600;" onchange="updateDutyRole(${i},'role',this.value)">
+        <button class="btn btn-danger btn-xs" onclick="delDutyRole(${i})">✕</button>
+      </div>
+      <textarea rows="6" style="width:100%;padding:10px 14px;border:none;font-size:12px;font-family:'Source Code Pro',monospace;resize:vertical" onchange="updateDutyRole(${i},'text',this.value)">${esc(d.text)}</textarea>
+    </div>`).join('');
+}
+window.updateDutyRole = function(idx, field, val) {
+  if (!STORE.settings.gtaDuties) STORE.settings.gtaDuties = getDefaultGTADuties();
+  if (STORE.settings.gtaDuties[idx]) { STORE.settings.gtaDuties[idx][field] = val; save(); }
+};
+window.delDutyRole = function(idx) {
+  if (!confirm('Delete this duties section?')) return;
+  STORE.settings.gtaDuties.splice(idx, 1); save(); renderGTADuties();
+};
+
 function renderGTA() {
+  renderGTADuties();
   const sems=semOpts(), sel=document.getElementById('gta-sem-select');
   const cur=sel.value||STORE.settings.currentSemester;
   sel.innerHTML=sems.map(s=>`<option${s===cur?' selected':''}>${s}</option>`).join('');
@@ -461,13 +568,45 @@ function renderGTATable() {
 window.exportGTA = function() {
   const sem=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
   const asgns=STORE.gtaAssignments.filter(a=>a.semester===sem).sort((a,b)=>a.gta.localeCompare(b.gta));
-  let txt=`GTA ASSIGNMENTS — ${sem}\n${'='.repeat(50)}\n`;
-  txt+=`GTA\tCourse\tHours\tSupervisor\tToR\n`;
-  txt+=asgns.map(a=>`${a.gta}\t${a.course}\t${a.hours}\t${a.supervisor}\t${a.tor?'Yes':''}`).join('\n');
-  navigator.clipboard.writeText(txt).then(()=>showToast('GTA table copied to clipboard','success')).catch(()=>{
-    const b=new Blob([txt],{type:'text/plain'});const l=document.createElement('a');l.href=URL.createObjectURL(b);l.download=`GTA_${sem.replace(' ','_')}.txt`;l.click();
+  // Group by GTA
+  const byGTA = {};
+  asgns.forEach(a=>{
+    if(!byGTA[a.gta]) byGTA[a.gta]=[];
+    byGTA[a.gta].push(a);
   });
+  let txt = `GTA Assignments ${sem}\n`;
+  txt += 'Bold print indicates teacher of record | Supervising faculty in parentheses\n\n';
+  Object.entries(byGTA).forEach(([name, tasks])=>{
+    const person = STORE.people.find(p=>p.name===name&&p.type==='student');
+    const hrs = person?person.hours:0;
+    const fellow = person&&person.fellow?' – Fellowship':'';
+    txt += `${name} (${hrs} hours${fellow})\n`;
+    tasks.forEach(t=>{
+      const label = t.tor ? `**${t.course}** (${t.supervisor})` : `${t.hours} hours ${t.course} (${t.supervisor})`;
+      txt += `  - ${label}\n`;
+    });
+    txt += '\n';
+  });
+  // Append duties sections
+  const duties = STORE.settings.gtaDuties || getDefaultGTADuties();
+  if (duties.length) {
+    txt += '\n' + '='.repeat(50) + '\n';
+    duties.forEach(d=>{ txt += `\nDuties for ${d.role}:\n${d.text}\n`; });
+  }
+  const blob=new Blob([txt],{type:'text/plain'});
+  const l=document.createElement('a');l.href=URL.createObjectURL(blob);
+  l.download=`GTA_Assignments_${sem.replace(' ','_')}.txt`;l.click();
 };
+
+function getDefaultGTADuties() {
+  return [
+    { role:'Written Theory TAs', text:'- Attend all lectures and assist with classroom instruction\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Proctor exams, as assigned\n- Hold office hours to assist students, as assigned by Supervisory Teacher\n- Attend scheduled meetings with Supervisory Teacher\n- Inform the Supervisory Teacher of absences\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
+    { role:'Aural Skills TAs', text:'- Attend all lectures and assist with classroom instruction, including conducting aural skills drills and exercises\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Proctor exams, as assigned\n- Hold office hours to assist students, as assigned by Supervisory Teacher\n- Attend scheduled meetings with Supervisory Teacher\n- Inform the Supervisory Teacher of absences\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
+    { role:'Electronic Studios TAs', text:'- Assist in developing promotional materials for the electroacoustic music studios and composition program\n- Maintain composition area website\n- Attend scheduled meetings with Supervisory Teacher\n- Inform the Supervisory Teacher of absences\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned\n- Maintain, update, and organize studio equipment\n- Supervise the computer lab, including hiring and scheduling student workers and maintaining equipment\n- Assist with instruction, as assigned by Supervisory Teacher' },
+    { role:'Rudiments/Theory 1 teacher of record', text:'- Teach Rudiments of Music (fall); Written Theory 1 (spring), which includes planning and class preparation\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with theory area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
+    { role:'Introduction to Music Technology TAs', text:'- Assist in the teaching of Introduction to Music Technology\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with electroacoustic music area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
+  ];
+}
 window.delGTA=function(id){STORE.gtaAssignments=STORE.gtaAssignments.filter(a=>a.id!==id);save();renderGTATable();};
 function renderGTAHistory() {
   const sel=document.getElementById('gta-hist-filter');
@@ -590,13 +729,17 @@ function renderAlumni() {
 // ═══════════════════════════════════
 function renderFaculty() {
   const areaF=document.getElementById('fac-area-filter').value;
-  const list=STORE.people.filter(p=>p.type==='faculty'&&(!areaF||( Array.isArray(p.areas)&&p.areas.includes(areaF))));
+  const showAlumni=document.getElementById('fac-show-alumni')&&document.getElementById('fac-show-alumni').checked;
+  const list=STORE.people.filter(p=>p.type==='faculty'
+    &&(showAlumni?p.active===false:p.active!==false)
+    &&(!areaF||(Array.isArray(p.areas)&&p.areas.includes(areaF))));
   document.getElementById('faculty-tbody').innerHTML=list.map(f=>{
     const areas=(f.areas||[]).map(a=>`<span class="area-tag area-${a==='Composition'?'comp':a==='Theory'?'theory':'aural'}">${a}</span>`).join('');
     const currentLoad=STORE.studioAssignments.filter(a=>a.faculty===f.name&&a.semester===STORE.settings.currentSemester).length;
+    const archivedBadge = f.active===false ? '<span class="pill pill-gray" style="font-size:10px">Archived</span> ' : '';
     return `<tr class="person-row" onclick="openPersonModal('${f.id}')">
-      <td><strong>${f.name}</strong></td><td>${f.title||''}</td><td>${areas}</td>
-      <td>${f.areas&&f.areas.includes('Composition')?`<span style="font-size:12px">${currentLoad}/${f.max||'?'} (${STORE.settings.currentSemester})</span>`:''}</td>
+      <td><strong>${f.name}</strong> ${archivedBadge}</td><td>${f.title||''}</td><td>${areas}</td>
+      <td>${f.areas&&f.areas.includes('Composition')&&f.active!==false?`<span style="font-size:12px">${currentLoad}/${f.max||'?'} (${STORE.settings.currentSemester})</span>`:''}</td>
       <td style="font-size:12px;max-width:200px">${f.notes||''}</td>
       <td><button class="btn btn-outline btn-xs" onclick="event.stopPropagation();openPersonModal('${f.id}')">✎ Edit</button></td>
     </tr>`;
@@ -618,12 +761,21 @@ window.openPersonModal = function(id) {
   document.getElementById('person-student-fields').style.display = type==='student' ? 'block' : 'none';
   document.getElementById('person-faculty-fields').style.display = type==='faculty' ? 'block' : 'none';
 
-  // Active/inactive toggle button (students only)
+  // Active/inactive toggle button (students and faculty)
   const toggleBtn = document.getElementById('btn-toggle-active');
   if (p && type==='student') {
     toggleBtn.style.display = 'inline-flex';
     if (isActive) {
       toggleBtn.textContent = '🎓 Graduate / Deactivate';
+      toggleBtn.className = 'btn btn-outline btn-sm';
+    } else {
+      toggleBtn.textContent = '↩ Reactivate';
+      toggleBtn.className = 'btn btn-gold btn-sm';
+    }
+  } else if (p && type==='faculty') {
+    toggleBtn.style.display = 'inline-flex';
+    if (isActive) {
+      toggleBtn.textContent = '📦 Archive Faculty';
       toggleBtn.className = 'btn btn-outline btn-sm';
     } else {
       toggleBtn.textContent = '↩ Reactivate';
@@ -666,28 +818,94 @@ window.openPersonModal = function(id) {
 // ═══════════════════════════════════
 // PRESENTATIONS
 // ═══════════════════════════════════
+function getAcademicYearSemesters(yearStart) {
+  // Returns ['Fall YYYY', 'Spring YYYY+1'] for a given fall start year
+  return ['Fall '+yearStart, 'Spring '+(yearStart+1)];
+}
+
 function renderPresentations() {
-  const semSel=document.getElementById('pres-sem-filter'),stuSel=document.getElementById('pres-stu-filter');
-  const curSem=STORE.settings.currentSemester;
-  const allSems=[...new Set(STORE.presentations.map(p=>p.semester))].sort((a,b)=>semKey(b).localeCompare(semKey(a)));
-  const prevVal=semSel.value;
-  semSel.innerHTML='<option value="">All semesters</option>'+allSems.map(s=>`<option${(prevVal||curSem)===s?' selected':''}>${s}</option>`).join('');
-  if(!prevVal&&allSems.includes(curSem)) semSel.value=curSem;
-  stuSel.innerHTML='<option value="">All students</option>'+allStudents().map(s=>`<option${s.name===stuSel.value?' selected':''}>${s.name}</option>`).join('');
-  let list=[...STORE.presentations];
-  if(semSel.value) list=list.filter(p=>p.semester===semSel.value);
-  if(stuSel.value) list=list.filter(p=>p.student===stuSel.value);
+  const semSel = document.getElementById('pres-sem-filter');
+  const stuSel = document.getElementById('pres-stu-filter');
+  const viewSel = document.getElementById('pres-view-select');
+  const curSem = STORE.settings.currentSemester;
+
+  // Build semester options from existing presentation data plus current semester
+  const existingSems = [...new Set(STORE.presentations.map(p=>p.semester))];
+  const allSems = [...new Set([...existingSems, curSem])].sort((a,b)=>semKey(b).localeCompare(semKey(a)));
+
+  // Build academic year options (Fall YYYY – Spring YYYY+1)
+  const ayYears = new Set();
+  allSems.forEach(s => {
+    const m = String(s).match(/(Fall|Spring)\s+(\d{4})/i);
+    if (!m) return;
+    const y = parseInt(m[2]);
+    if (m[1].toLowerCase()==='fall') ayYears.add(y);
+    else ayYears.add(y-1);
+  });
+  const ayOpts = [...ayYears].sort((a,b)=>b-a)
+    .map(y=>`<option value="ay-${y}">Academic Year ${y}–${y+1}</option>`).join('');
+
+  const prevSemVal = semSel.value;
+  semSel.innerHTML = '<option value="">All semesters</option>' +
+    allSems.map(s=>`<option${(prevSemVal||(allSems.includes(curSem)?curSem:''))===s?' selected':''}>${s}</option>`).join('');
+  if (!prevSemVal && allSems.includes(curSem)) semSel.value = curSem;
+
+  // View selector: semester or academic year
+  if (viewSel) {
+    const prevView = viewSel.value;
+    viewSel.innerHTML = '<option value="semester">By Semester</option>' + ayOpts;
+    if (prevView) viewSel.value = prevView;
+  }
+
+  stuSel.innerHTML = '<option value="">All students</option>' +
+    allStudents().map(s=>`<option${s.name===stuSel.value?' selected':''}>${s.name}</option>`).join('');
+
+  // Determine active filter
+  const viewMode = viewSel ? viewSel.value : 'semester';
+  let coverageSems = [];
+  let listFilter = null;
+
+  if (viewMode && viewMode.startsWith('ay-')) {
+    const yr = parseInt(viewMode.replace('ay-',''));
+    coverageSems = getAcademicYearSemesters(yr);
+    listFilter = p => coverageSems.includes(p.semester);
+  } else {
+    const semFilter = semSel.value || curSem;
+    coverageSems = semFilter ? [semFilter] : allSems;
+    listFilter = semSel.value ? (p=>p.semester===semSel.value) : null;
+  }
+
+  let list = [...STORE.presentations];
+  if (listFilter) list = list.filter(listFilter);
+  if (stuSel.value) list = list.filter(p=>p.student===stuSel.value);
   list.sort((a,b)=>b.date.localeCompare(a.date));
-  // Who has presented this semester
-  const semFilter=semSel.value||curSem;
-  const presentedThisSem=new Set(STORE.presentations.filter(p=>p.semester===semFilter).map(p=>p.student));
-  const notYet=students().filter(s=>!presentedThisSem.has(s.name)).sort((a,b)=>lastName(a.name).localeCompare(lastName(b.name)));
-  document.getElementById('pres-coverage').innerHTML=`<div style="font-size:13px"><strong>${presentedThisSem.size}</strong> student${presentedThisSem.size!==1?'s':''} presented in <strong>${semFilter}</strong>`+(notYet.length?` — <span style="color:var(--red)">not yet: ${notYet.map(s=>s.name).join(', ')}</span>`:`<span style="color:var(--green)"> — all accounted for</span>`)+'</div>';
-  document.getElementById('pres-tbody').innerHTML=list.map(p=>`<tr>
+
+  // Coverage — who has and hasn't presented
+  const presentedInScope = new Set(
+    STORE.presentations.filter(p=>coverageSems.includes(p.semester)).map(p=>p.student)
+  );
+  const activeStudents = students().sort((a,b)=>lastName(a.name).localeCompare(lastName(b.name)));
+  const hasPresented = activeStudents.filter(s=>presentedInScope.has(s.name));
+  const notYet = activeStudents.filter(s=>!presentedInScope.has(s.name));
+  const scopeLabel = viewMode&&viewMode.startsWith('ay-')
+    ? `Academic Year ${viewMode.replace('ay-','')}–${parseInt(viewMode.replace('ay-',''))+1}`
+    : (semSel.value||curSem);
+
+  const coverageHtml = `
+    <div style="margin-bottom:10px;font-size:13px;font-weight:600">${scopeLabel}: ${presentedInScope.size}/${activeStudents.length} students have presented</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      ${hasPresented.length ? `<div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:4px">✓ Presented (${hasPresented.length})</div>
+        ${hasPresented.map(s=>`<span style="display:inline-block;background:#d4edda;color:var(--green);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}</div>` : ''}
+      ${notYet.length ? `<div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--red);margin-bottom:4px">✗ Not Yet (${notYet.length})</div>
+        ${notYet.map(s=>`<span style="display:inline-block;background:#fde8e6;color:var(--red);border-radius:4px;padding:2px 8px;font-size:12px;margin:2px">${s.name}</span>`).join('')}</div>` : ''}
+    </div>`;
+  document.getElementById('pres-coverage').innerHTML = coverageHtml;
+
+  document.getElementById('pres-tbody').innerHTML = list.map(p=>`<tr>
     <td>${fmtDate(p.date)}</td><td>${p.semester}</td><td><strong>${p.student}</strong></td>
     <td style="font-size:12px">${p.notes||''}</td>
     <td><button class="btn btn-danger btn-xs" onclick="delPres('${p.id}')">✕</button></td>
-  </tr>`).join('')||'<tr><td colspan="5" class="text-muted" style="padding:16px">No presentations logged.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="5" class="text-muted" style="padding:16px">No presentations logged.</td></tr>';
 }
 window.delPres=function(id){STORE.presentations=STORE.presentations.filter(p=>p.id!==id);save();renderPresentations();};
 
@@ -840,8 +1058,8 @@ function setupEventHandlers() {
   });
   document.getElementById('tasks-filter').addEventListener('change',renderTasks);
   document.getElementById('btn-reset-tasks').addEventListener('click',()=>{
-    if(confirm('Reset all recurring tasks to Pending for a new semester?')){
-      STORE.tasks.filter(t=>t.freq!=='Once').forEach(t=>{t.done=false;});save();renderTasks();
+    if(confirm('Reset ALL recurring tasks to Pending?\n\nNote: normally tasks auto-generate the next instance when marked done. Use this only if you need a manual reset.')) {
+      STORE.tasks.filter(t=>t.freq!=='Once').forEach(t=>{t.done=false;}); save(); renderTasks();
     }
   });
 
@@ -928,9 +1146,9 @@ function setupEventHandlers() {
     const active=STORE.agendaItems.filter(a=>!a.done);
     const high=active.filter(a=>a.priority==='High'),normal=active.filter(a=>a.priority==='Normal'),info=active.filter(a=>a.priority==='Informational');
     let text='UF COMPOSITION & THEORY AREA — FACULTY MEETING AGENDA\nDate: ___________________\n\n';
-    if(high.length){text+='HIGH PRIORITY\n';high.forEach((a,i)=>{text+=`${i+1}. ${a.text}`+(a.submitter?` (${a.submitter})`:'');text+='\n';});text+='\n';}
-    if(normal.length){text+='AGENDA ITEMS\n';normal.forEach((a,i)=>{text+=`${i+1}. ${a.text}`+(a.submitter?` (${a.submitter})`:'');text+='\n';});text+='\n';}
-    if(info.length){text+='FOR INFORMATION\n';info.forEach((a,i)=>{text+=`${i+1}. ${a.text}`+(a.submitter?` (${a.submitter})`:'');text+='\n';});}
+    if(high.length){text+='HIGH PRIORITY\n';high.forEach((a,i)=>{text+=`${i+1}. ${a.text}`;text+='\n';});text+='\n';}
+    if(normal.length){text+='AGENDA ITEMS\n';normal.forEach((a,i)=>{text+=`${i+1}. ${a.text}`;text+='\n';});text+='\n';}
+    if(info.length){text+='FOR INFORMATION\n';info.forEach((a,i)=>{text+=`${i+1}. ${a.text}`;text+='\n';});}
     const blob=new Blob([text],{type:'text/plain'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Agenda_'+today()+'.txt';a.click();
   });
@@ -948,6 +1166,12 @@ function setupEventHandlers() {
 
   // GTA
   document.getElementById('gta-sem-select').addEventListener('change',renderGTATable);
+  const btnAddDuty=document.getElementById('btn-add-duty-role');
+  if(btnAddDuty) btnAddDuty.addEventListener('click',()=>{
+    if(!STORE.settings.gtaDuties) STORE.settings.gtaDuties=getDefaultGTADuties();
+    STORE.settings.gtaDuties.push({role:'New Duty Section',text:'- '});
+    save(); renderGTADuties();
+  });
   document.getElementById('gta-hist-filter').addEventListener('change',renderGTAHistory);
   document.getElementById('btn-add-gta').addEventListener('click',()=>{
     const sel=document.getElementById('gta-name-sel');
@@ -1002,26 +1226,27 @@ function setupEventHandlers() {
     const p=STORE.people.find(p=>p.id===id);
     if(!p) return;
     const isActive = p.active !== false;
+    const type = p.type;
     if(isActive) {
-      // Deactivating — ask for exit info first
-      const exitType=document.getElementById('person-exit-type').value||'Graduated';
-      const exitYear=document.getElementById('person-exit-year').value||new Date().getFullYear().toString();
-      p.active=false;
-      p.exitType=exitType;
-      p.exitYear=exitYear;
-      // Also save any notes they may have edited
-      p.notes=document.getElementById('person-notes').value;
-      save(); closeModal('modal-person');
-      renderStudents();
-      showToast(`${p.name} moved to Alumni.`,'success');
+      if(type==='student'){
+        const exitType=document.getElementById('person-exit-type').value||'Graduated';
+        const exitYear=document.getElementById('person-exit-year').value||new Date().getFullYear().toString();
+        p.active=false; p.exitType=exitType; p.exitYear=exitYear;
+        p.notes=document.getElementById('person-notes').value;
+        save(); closeModal('modal-person'); renderStudents();
+        showToast(`${p.name} moved to Alumni.`,'success');
+      } else {
+        p.active=false;
+        p.notes=document.getElementById('person-notes').value;
+        save(); closeModal('modal-person'); renderFaculty();
+        showToast(`${p.name} archived.`,'success');
+      }
     } else {
-      // Reactivating
       p.active=true;
-      p.exitType='';
-      p.exitYear='';
+      if(type==='student'){p.exitType=''; p.exitYear='';}
       save(); closeModal('modal-person');
-      renderStudents();
-      showToast(`${p.name} reactivated as current student.`,'success');
+      type==='student'?renderStudents():renderFaculty();
+      showToast(`${p.name} reactivated.`,'success');
     }
   });
 
@@ -1071,6 +1296,7 @@ function setupEventHandlers() {
 
   // Presentations
   document.getElementById('pres-sem-filter').addEventListener('change',renderPresentations);
+  const presViewSel=document.getElementById('pres-view-select'); if(presViewSel) presViewSel.addEventListener('change',renderPresentations);
   document.getElementById('pres-stu-filter').addEventListener('change',renderPresentations);
   document.getElementById('btn-add-pres').addEventListener('click',()=>{
     document.getElementById('pres-student').innerHTML=students().map(s=>`<option>${s.name}</option>`).join('');

@@ -119,7 +119,44 @@ function loadSuSettings() {
   document.getElementById('su-public-url').value = s.publicUrl||'';
   document.getElementById('su-remind-days-1').value = s.remindDays1||7;
   document.getElementById('su-remind-days-2').value = s.remindDays2||1;
+  renderNamedCalsList();
+  populateCalDropdown();
 }
+
+function renderNamedCalsList() {
+  const cals = (STORE.settings.signups||{}).namedCals || [];
+  const el = document.getElementById('su-named-cals-list');
+  if (!el) return;
+  if (!cals.length) {
+    el.innerHTML = '<div class="text-muted mb-8">No calendars saved yet.</div>';
+    return;
+  }
+  el.innerHTML = cals.map((c, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--gray-100);border-radius:6px;margin-bottom:6px">
+      <div style="flex:1">
+        <span style="font-weight:600;font-size:13px">${esc(c.nick)}</span>
+        <span class="text-muted" style="margin-left:10px;font-size:12px;font-family:'Source Code Pro',monospace">${esc(c.id)}</span>
+      </div>
+      <button class="btn btn-danger btn-xs" onclick="delNamedCal(${i})">✕</button>
+    </div>`).join('');
+}
+
+function populateCalDropdown() {
+  const sel = document.getElementById('su-cal-id');
+  if (!sel) return;
+  const cals = (STORE.settings.signups||{}).namedCals || [];
+  const cur = sel.value;
+  sel.innerHTML = cals.length
+    ? cals.map(c => `<option value="${esc(c.id)}"${c.id===cur?' selected':''}>${esc(c.nick)}</option>`).join('')
+    : '<option value="">— Add calendars in Settings tab —</option>';
+}
+
+window.delNamedCal = function(idx) {
+  const s = STORE.settings.signups;
+  if (!s || !s.namedCals) return;
+  s.namedCals.splice(idx, 1);
+  save(); renderNamedCalsList(); populateCalDropdown();
+};
 
 // ── Sheets list ──
 async function renderSuSheetsList() {
@@ -438,7 +475,11 @@ window.publishSuSheet = async function() {
   if(!allSlots.length){ showToast('No slots generated.','error'); return; }
   const sheetId = uid();
   const syncCalendar = document.getElementById('su-sync-cal').checked;
-  const calendarId = (document.getElementById('su-cal-id').value.trim()) || 'primary';
+  const calSel = document.getElementById('su-cal-id');
+  const calendarId = (calSel && calSel.value) ? calSel.value : 'primary';
+  // Get nickname for the toast message
+  const cals = (STORE.settings.signups||{}).namedCals||[];
+  const calNick = (cals.find(c=>c.id===calendarId)||{}).nick || calendarId;
   const payloadData = {
     sheetId, title,
     subtitle: document.getElementById('su-subtitle').value.trim(),
@@ -468,7 +509,7 @@ window.publishSuSheet = async function() {
         throw fetchErr;
       }
     }
-    showToast('Sheet published! ' + (syncCalendar ? 'Creating calendar events…' : 'Switching to Sheets tab.'), 'success');
+    showToast('Sheet published! ' + (syncCalendar ? `Creating events on "${calNick}"…` : 'Switching to Sheets tab.'), 'success');
 
     // If calendar sync requested, make a second separate call to seed events
     // (split to avoid Apps Script 30-second timeout)
@@ -478,7 +519,7 @@ window.publishSuSheet = async function() {
         if (calResult.errors && calResult.errors.length) {
           showToast('Calendar: ' + calResult.created.length + ' events created. Errors: ' + calResult.errors.join('; '), 'info');
         } else if (calResult.created) {
-          showToast('✅ ' + calResult.created.length + ' calendar event' + (calResult.created.length !== 1 ? 's' : '') + ' created.', 'success');
+          showToast('✅ ' + calResult.created.length + ' calendar event' + (calResult.created.length !== 1 ? 's' : '') + ' created on "' + calNick + '".', 'success');
         }
       } catch(calErr) {
         showToast('Sheet published but calendar sync failed: ' + calErr.message + '. Try re-seeding from the Sheets tab.', 'info');
@@ -489,7 +530,6 @@ window.publishSuSheet = async function() {
     document.getElementById('su-title').value='';
     document.getElementById('su-subtitle').value='';
     document.getElementById('su-sync-cal').checked=false;
-    document.getElementById('su-cal-id').value='';
     document.getElementById('su-cal-id-row').style.display='none';
     renderSuBuilder();
     suSwitchTab('su-sheets');
@@ -520,12 +560,10 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function setupSignupHandlers() {
   document.getElementById('btn-add-block').addEventListener('click',()=>openSuBlockModal(null));
   document.getElementById('btn-su-refresh').addEventListener('click',()=>renderSuSheetsList());
-  // Calendar sync checkbox — show/hide calendar ID field
+  // Calendar sync checkbox — show/hide calendar dropdown
   document.getElementById('su-sync-cal').addEventListener('change', function() {
     document.getElementById('su-cal-id-row').style.display = this.checked ? 'block' : 'none';
-    if(this.checked && !document.getElementById('su-cal-id').value) {
-      document.getElementById('su-cal-id').value = 'primary';
-    }
+    if (this.checked) populateCalDropdown();
   });
   document.getElementById('btn-su-clear-builder').addEventListener('click',()=>{
     if(_suBlocks.length&&!confirm('Clear all blocks?')) return;
@@ -563,5 +601,24 @@ function setupSignupHandlers() {
     s.remindDays1=parseInt(document.getElementById('su-remind-days-1').value)||7;
     s.remindDays2=parseInt(document.getElementById('su-remind-days-2').value)||1;
     save(); showToast('Sign-up settings saved.','success');
+  });
+
+  document.getElementById('btn-add-named-cal').addEventListener('click',()=>{
+    const nick = document.getElementById('su-cal-nick').value.trim();
+    const id   = document.getElementById('su-cal-id-input').value.trim();
+    if (!nick || !id) { showToast('Please enter both a nickname and a Calendar ID.','error'); return; }
+    if (!STORE.settings.signups) STORE.settings.signups = {};
+    if (!STORE.settings.signups.namedCals) STORE.settings.signups.namedCals = [];
+    // Prevent duplicates by ID
+    if (STORE.settings.signups.namedCals.find(c => c.id === id)) {
+      showToast('That Calendar ID is already saved.','error'); return;
+    }
+    STORE.settings.signups.namedCals.push({ nick, id });
+    document.getElementById('su-cal-nick').value = '';
+    document.getElementById('su-cal-id-input').value = '';
+    save();
+    renderNamedCalsList();
+    populateCalDropdown();
+    showToast('Calendar "' + nick + '" saved.','success');
   });
 }
