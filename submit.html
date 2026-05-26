@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Submit an Event</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#1a2744;--gold:#c9a84c;--gold-pale:#f5ecd1;--cream:#faf8f3;--white:#fff;--gray-100:#f0ede6;--gray-200:#ddd8cc;--gray-400:#9e9788;--gray-600:#5a5649;--red:#c0392b;--green:#2d7a4f;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Source Sans 3',sans-serif;background:var(--cream);color:var(--navy);min-height:100vh;}
+header{background:var(--navy);border-bottom:3px solid var(--gold);padding:18px 24px 14px;}
+header h1{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#fff;}
+header .sub{font-size:12px;color:var(--gray-400);letter-spacing:1px;text-transform:uppercase;margin-top:4px;}
+.container{max-width:640px;margin:0 auto;padding:32px 16px 60px;}
+.card{background:var(--white);border-radius:8px;padding:24px 28px;border:1px solid var(--gray-200);margin-bottom:20px;box-shadow:0 1px 4px rgba(26,39,68,.06);}
+.card-title{font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--navy);margin-bottom:16px;}
+.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+.form-group label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);}
+.form-group label .req{color:var(--red);}
+input,select,textarea{padding:10px 12px;border:1px solid var(--gray-200);border-radius:5px;font-size:14px;font-family:'Source Sans 3',sans-serif;color:var(--navy);background:var(--white);-webkit-appearance:none;width:100%;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);}
+textarea{resize:vertical;min-height:80px;}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239e9788' d='M6 8L0 0h12z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:500px){.two-col{grid-template-columns:1fr;}}
+.btn-submit{width:100%;padding:14px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Source Sans 3',sans-serif;margin-top:8px;transition:.15s;}
+.btn-submit:active{opacity:.85;}
+.btn-submit:disabled{opacity:.5;cursor:not-allowed;}
+.msg{padding:14px 16px;border-radius:7px;font-size:14px;margin-bottom:16px;line-height:1.6;}
+.msg.success{background:#d4edda;color:var(--green);}
+.msg.error{background:#fde8e6;color:var(--red);}
+.hint{font-size:11px;color:var(--gray-400);margin-top:3px;}
+.passphrase-gate{text-align:center;padding:40px 20px;}
+.passphrase-gate h2{font-family:'Playfair Display',serif;font-size:22px;margin-bottom:8px;}
+.passphrase-gate p{color:var(--gray-600);font-size:14px;margin-bottom:20px;}
+#passphrase-input{max-width:300px;margin:0 auto;display:block;text-align:center;font-size:16px;letter-spacing:2px;}
+.btn-pass{display:block;margin:12px auto 0;padding:10px 28px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Source Sans 3',sans-serif;}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="page-heading">Submit an Event</h1>
+  <div class="sub">UF Composition &amp; Theory Area</div>
+</header>
+<div class="container">
+  <div id="msg-area"></div>
+
+  <!-- Passphrase gate -->
+  <div id="passphrase-gate" class="card passphrase-gate" style="display:none">
+    <h2>Enter Access Code</h2>
+    <p>Please enter the access code to submit an event.</p>
+    <input type="password" id="passphrase-input" placeholder="Access code" autocomplete="off">
+    <button class="btn-pass" onclick="checkPassphrase()">Continue</button>
+    <div id="pass-error" class="msg error" style="display:none;margin-top:14px">Incorrect access code.</div>
+  </div>
+
+  <!-- Submission form -->
+  <div id="submission-form" style="display:none">
+    <div class="card">
+      <div class="card-title">Event Details</div>
+      <div class="form-group">
+        <label>Event Name <span class="req">*</span></label>
+        <input type="text" id="ev-name" placeholder="e.g. Faculty Recital: Jane Smith">
+      </div>
+      <div class="two-col">
+        <div class="form-group">
+          <label>Date <span class="req">*</span></label>
+          <input type="date" id="ev-date">
+        </div>
+        <div class="form-group">
+          <label>End Date (if multi-day)</label>
+          <input type="date" id="ev-date-end">
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="form-group">
+          <label>Start Time</label>
+          <input type="time" id="ev-start-time">
+        </div>
+        <div class="form-group">
+          <label>End Time</label>
+          <input type="time" id="ev-end-time">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="ev-location" placeholder="e.g. MUB 101 or Zoom link">
+      </div>
+      <div class="form-group">
+        <label>Description / Program Notes</label>
+        <textarea id="ev-description" rows="4" placeholder="Include any relevant details about the event…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="ev-category">
+          <option value="">— Select —</option>
+          <option>Recital / Concert</option>
+          <option>Lecture</option>
+          <option>Workshop</option>
+          <option>Meeting</option>
+          <option>Audition</option>
+          <option>Masterclass</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Submitted By</div>
+      <div class="two-col">
+        <div class="form-group">
+          <label>Your Name <span class="req">*</span></label>
+          <input type="text" id="sub-name" placeholder="First Last" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label>Your Role</label>
+          <select id="sub-role">
+            <option value="">— Select —</option>
+            <option>Undergraduate Student</option>
+            <option>Graduate Student</option>
+            <option>Faculty</option>
+            <option>Guest Artist</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Your Email</label>
+        <input type="email" id="sub-email" placeholder="you@ufl.edu" autocomplete="email">
+        <div class="hint">Optional — we may contact you with questions about your submission.</div>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="btn-submit" onclick="submitEvent()">Submit Event for Approval</button>
+  </div>
+
+  <!-- Success state -->
+  <div id="success-state" style="display:none" class="card" style="text-align:center;padding:40px">
+    <div style="font-size:48px;margin-bottom:16px">✅</div>
+    <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;margin-bottom:8px">Submission Received</div>
+    <div style="color:var(--gray-600);font-size:14px;line-height:1.7">Your event has been submitted for review. Once approved it will appear on the composition area calendar.</div>
+    <button class="btn-pass" style="margin-top:20px" onclick="resetForm()">Submit Another Event</button>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = '%%APPS_SCRIPT_URL%%';
+const params = new URLSearchParams(location.search);
+const AS_URL = params.get('as') || (APPS_SCRIPT_URL.includes('%%') ? '' : APPS_SCRIPT_URL);
+
+let _passphrase = null;
+let _passphraseRequired = false;
+
+async function init() {
+  if (!AS_URL) {
+    showMsg('Submission form not configured. Please contact the administrator.', 'error');
+    return;
+  }
+  try {
+    const data = await apGet('getSubmitConfig');
+    _passphraseRequired = !!data.passphrase;
+    _passphrase = data.passphrase || null;
+    if (_passphraseRequired) {
+      document.getElementById('passphrase-gate').style.display = 'block';
+    } else {
+      document.getElementById('submission-form').style.display = 'block';
+    }
+    if (data.pageTitle) document.getElementById('page-heading').textContent = data.pageTitle;
+  } catch(e) {
+    // If config endpoint fails, just show form with no passphrase
+    document.getElementById('submission-form').style.display = 'block';
+  }
+}
+
+function checkPassphrase() {
+  const val = document.getElementById('passphrase-input').value.trim();
+  if (!_passphrase || val === _passphrase) {
+    document.getElementById('passphrase-gate').style.display = 'none';
+    document.getElementById('submission-form').style.display = 'block';
+  } else {
+    document.getElementById('pass-error').style.display = 'block';
+  }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('passphrase-input') === document.activeElement) checkPassphrase();
+});
+
+async function submitEvent() {
+  const name = document.getElementById('ev-name').value.trim();
+  const date = document.getElementById('ev-date').value;
+  const subName = document.getElementById('sub-name').value.trim();
+  if (!name) { showMsg('Please enter an event name.', 'error'); return; }
+  if (!date) { showMsg('Please enter a date.', 'error'); return; }
+  if (!subName) { showMsg('Please enter your name.', 'error'); return; }
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+
+  const payload = {
+    name, date,
+    dateEnd: document.getElementById('ev-date-end').value || '',
+    startTime: document.getElementById('ev-start-time').value || '',
+    endTime: document.getElementById('ev-end-time').value || '',
+    location: document.getElementById('ev-location').value.trim(),
+    description: document.getElementById('ev-description').value.trim(),
+    category: document.getElementById('ev-category').value,
+    submittedBy: subName,
+    submitterRole: document.getElementById('sub-role').value,
+    submitterEmail: document.getElementById('sub-email').value.trim(),
+    submittedAt: new Date().toISOString()
+  };
+
+  try {
+    await apGet('submitEvent', payload);
+    document.getElementById('submission-form').style.display = 'none';
+    document.getElementById('success-state').style.display = 'block';
+  } catch(e) {
+    showMsg('Submission failed: ' + e.message + '. Please try again.', 'error');
+    btn.disabled = false; btn.textContent = 'Submit Event for Approval';
+  }
+}
+
+function resetForm() {
+  document.getElementById('success-state').style.display = 'none';
+  document.getElementById('submission-form').style.display = 'block';
+  ['ev-name','ev-date','ev-date-end','ev-location','ev-description','sub-name','sub-email'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('ev-start-time').value = '';
+  document.getElementById('ev-end-time').value = '';
+  document.getElementById('ev-category').value = '';
+  document.getElementById('sub-role').value = '';
+}
+
+async function apGet(action, payload) {
+  let url = AS_URL + '?action=' + encodeURIComponent(action);
+  if (payload) url += '&payload=' + encodeURIComponent(JSON.stringify(payload));
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+function showMsg(msg, type) {
+  const el = document.getElementById('msg-area');
+  el.innerHTML = `<div class="msg ${type}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = '', 6000);
+}
+
+init();
+</script>
+</body>
+</html>

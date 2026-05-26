@@ -61,6 +61,8 @@
         <div class="nav-item" data-page="gta"><span class="icon">📚</span> GTA Assignments</div>
         <div class="nav-item" data-page="studio"><span class="icon">🎼</span> Studio Assignments</div>
         <div class="nav-item" data-page="presentations"><span class="icon">🎤</span> Studio Presentations</div>
+        <div class="nav-item" data-page="submissions"><span class="icon">📨</span> Event Submissions</div>
+        <div class="nav-item" data-page="archive"><span class="icon">📚</span> Calendar Archive</div>
         <div class="nav-item" data-page="signups"><span class="icon">📝</span> Sign-Up Sheets</div>
       </div>
       <div class="sidebar-section">
@@ -235,6 +237,14 @@
           <div class="filter-bar mt-8"><div class="form-group"><label>Filter by GTA</label><select id="gta-hist-filter"><option value="">All</option></select></div></div>
           <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Semester</th><th>GTA</th><th>Course</th><th>Hours</th><th>Supervisor</th><th>ToR</th></tr></thead><tbody id="gta-hist-tbody"></tbody></table></div></div>
         </div>
+        <div class="tab-panel" id="tab-gta-duties">
+          <div class="card mt-8">
+            <div class="card-title">GTA Duties <span style="font-size:12px;font-weight:400;color:var(--gray-400)">— appended to GTA assignment export</span></div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">Edit the duties text for each role. These sections are appended automatically when you export GTA assignments. Pre-populated from your area documents.</p>
+            <div id="gta-duties-list"></div>
+            <button class="btn btn-outline btn-sm mt-8" id="btn-add-duty-role">+ Add Duty Section</button>
+          </div>
+        </div>
       </div>
 
       <!-- STUDIO -->
@@ -340,13 +350,18 @@
       <div class="page" id="page-presentations">
         <div class="page-title">Studio Presentations</div>
         <div class="page-sub">Composition studio class presentation history</div>
-        <div class="flex-row mt-8 mb-16">
-          <div class="form-group"><label>Semester</label><select id="pres-sem-filter"><option value="">All</option></select></div>
-          <div class="form-group"><label>Student</label><select id="pres-stu-filter"><option value="">All</option></select></div>
-          <div class="spacer"></div>
-          <button class="btn btn-primary" id="btn-add-pres">+ Log Presentation</button>
+        <div class="card mt-8" style="padding:14px 18px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);margin-bottom:10px">Filter</div>
+          <div class="flex-row" style="align-items:flex-end;flex-wrap:wrap;gap:12px">
+            <div class="form-group"><label>From Semester</label><select id="pres-from-filter"><option value="">Earliest</option></select></div>
+            <div class="form-group"><label>To Semester</label><select id="pres-to-filter"><option value="">Latest</option></select></div>
+            <div class="form-group"><label>Student</label><select id="pres-stu-filter"><option value="">All students</option></select></div>
+            <button class="btn btn-outline btn-sm" id="btn-pres-clear-filter" style="margin-bottom:1px">Clear</button>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" id="btn-add-pres">+ Log Presentation</button>
+          </div>
         </div>
-        <div class="card mb-8" id="pres-coverage"></div>
+        <div class="card mb-8 mt-8" id="pres-coverage"></div>
         <div class="card">
           <div class="table-wrap"><table class="data-table" id="pres-table">
             <thead><tr><th>Date</th><th>Semester</th><th>Student</th><th>Notes</th><th></th></tr></thead>
@@ -580,6 +595,150 @@
         </div>
       </div>
 
+
+      <!-- EVENT SUBMISSIONS -->
+      <div class="page" id="page-submissions">
+        <div class="page-title">Event Submissions</div>
+        <div class="page-sub">Review, edit, and approve events submitted via the public form</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="sub-pending">Pending <span class="badge" id="sub-pending-count">0</span></button>
+          <button class="tab-btn" data-tab="sub-approved">Approved</button>
+          <button class="tab-btn" data-tab="sub-rejected">Rejected</button>
+          <button class="tab-btn" data-tab="sub-settings">Settings</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-sub-pending">
+          <div class="flex-row mt-8 mb-8">
+            <button class="btn btn-outline btn-sm" id="btn-sub-refresh">↺ Refresh</button>
+            <div class="spacer"></div>
+            <a id="sub-public-link" href="#" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none">🔗 Open Submission Form</a>
+          </div>
+          <div id="sub-pending-list"><div class="text-muted">Loading…</div></div>
+        </div>
+
+        <div class="tab-panel" id="tab-sub-approved">
+          <div class="mt-8" id="sub-approved-list"><div class="text-muted">No approved submissions.</div></div>
+        </div>
+
+        <div class="tab-panel" id="tab-sub-rejected">
+          <div class="mt-8" id="sub-rejected-list"><div class="text-muted">No rejected submissions.</div></div>
+        </div>
+
+        <div class="tab-panel" id="tab-sub-settings">
+          <div class="card mt-8">
+            <div class="card-title">📨 Event Submission Settings</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">
+              Configure the public submission form. The form uses the same Apps Script as sign-up sheets.
+              Set these properties in your Apps Script → Project Settings → Script Properties.
+            </p>
+            <div class="form-group mb-10"><label>Public Submission Form URL</label>
+              <input type="text" id="sub-public-url" placeholder="https://yourusername.github.io/your-repo/submit.html" style="width:100%">
+              <div class="text-muted" style="margin-top:4px">Share this link with students and faculty.</div>
+            </div>
+            <div class="form-group mb-10"><label>Notification Email (for new submission alerts)</label>
+              <input type="text" id="sub-notify-email" placeholder="scott.lee@ufl.edu" style="width:300px">
+              <div class="text-muted" style="margin-top:4px">Set as <code>SUBMIT_NOTIFY_EMAIL</code> in Script Properties.</div>
+            </div>
+            <div class="form-group mb-10"><label>Passphrase (optional — leave blank for open access)</label>
+              <input type="text" id="sub-passphrase" placeholder="e.g. gators2026" style="width:240px">
+              <div class="text-muted" style="margin-top:4px">Set as <code>SUBMIT_PASSPHRASE</code> in Script Properties. If set, submitters must enter this to access the form.</div>
+            </div>
+            <div class="form-group mb-10"><label>Default Calendar for Approvals</label>
+              <select id="sub-cal-id" style="width:100%"></select>
+              <div class="text-muted" style="margin-top:4px">Events approved here will be added to this calendar.</div>
+            </div>
+            <button class="btn btn-primary" id="btn-sub-save-settings">Save Settings</button>
+          </div>
+          <div class="card mt-8">
+            <div class="card-title">Script Properties to Set</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:10px">In Apps Script → Project Settings → Script Properties, add:</p>
+            <table class="data-table" style="font-size:12px">
+              <thead><tr><th>Property</th><th>Value</th></tr></thead>
+              <tbody>
+                <tr><td><code>SUBMIT_NOTIFY_EMAIL</code></td><td>Email to notify on new submission (e.g. scott.lee@ufl.edu)</td></tr>
+                <tr><td><code>SUBMIT_PASSPHRASE</code></td><td>Optional access code for the submission form</td></tr>
+                <tr><td><code>SUBMIT_PAGE_TITLE</code></td><td>Optional custom heading on the submission form</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- CALENDAR ARCHIVE -->
+      <div class="page" id="page-archive">
+        <div class="page-title">Calendar Archive</div>
+        <div class="page-sub">Archived events from the Comp Studio Google Calendar, organized by semester</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="archive-browse">Browse</button>
+          <button class="tab-btn" data-tab="archive-settings">Archive Settings</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-archive-browse">
+          <div class="flex-row mt-8 mb-8" style="flex-wrap:wrap;gap:10px">
+            <div class="form-group"><label>Semester</label>
+              <select id="archive-sem-sel" style="min-width:180px">
+                <option value="">— Select semester —</option>
+              </select>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-archive-load" style="margin-top:18px">Load</button>
+            <button class="btn btn-gold btn-sm" id="btn-archive-export" style="margin-top:18px" disabled>⬇ Export Printable</button>
+            <div class="spacer"></div>
+            <button class="btn btn-outline btn-sm" id="btn-archive-refresh-sems" style="margin-top:18px">↺ Refresh Semester List</button>
+          </div>
+          <div id="archive-event-list"><div class="text-muted">Select a semester and click Load to view archived events.</div></div>
+        </div>
+
+        <div class="tab-panel" id="tab-archive-settings">
+          <div class="card mt-8">
+            <div class="card-title">🗓 Archive Settings</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">
+              Set the calendar to archive from. This should be the Comp Studio calendar (ufcomposers@gmail.com).
+              Add it to your Named Calendars in Sign-Up Sheets → Settings, then select it here.
+            </p>
+            <div class="form-group mb-10"><label>Calendar to Archive</label>
+              <select id="archive-cal-sel" style="width:100%"></select>
+              <div class="text-muted" style="margin-top:4px">Set as <code>ARCHIVE_CALENDAR_ID</code> in Script Properties for the scheduled auto-archive.</div>
+            </div>
+            <button class="btn btn-primary" id="btn-archive-save-cal">Save</button>
+          </div>
+
+          <div class="card mt-8">
+            <div class="card-title">⏱ Automatic Archive Schedule</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">
+              Set up two time-based triggers in Apps Script to auto-archive each semester:
+            </p>
+            <table class="data-table" style="font-size:12px;margin-bottom:14px">
+              <thead><tr><th>Function</th><th>When to Run</th><th>What It Archives</th></tr></thead>
+              <tbody>
+                <tr><td><code>archiveFallSemester</code></td><td>Jan 1, once per year</td><td>Aug 1 – Dec 31 of previous year → "Fall YYYY"</td></tr>
+                <tr><td><code>archiveSpriingSemester</code></td><td>Aug 1, once per year</td><td>Jan 1 – Jul 31 of current year → "Spring YYYY"</td></tr>
+              </tbody>
+            </table>
+            <p class="text-muted" style="font-size:12px;margin-bottom:10px">In Apps Script: <strong>Triggers (clock icon) → + Add Trigger</strong> for each function. Set to "Year timer" and the appropriate month/day.</p>
+            <p class="text-muted" style="font-size:12px">Also set <code>ARCHIVE_CALENDAR_ID</code> in Script Properties to the calendar ID.</p>
+          </div>
+
+          <div class="card mt-8">
+            <div class="card-title">📥 Archive a Semester Manually</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px">Archive any date range on demand. This re-archives and overwrites if the semester already exists.</p>
+            <div class="form-row">
+              <div class="form-group"><label>Semester Label</label>
+                <input type="text" id="archive-manual-label" placeholder="e.g. Fall 2025" style="width:160px">
+              </div>
+              <div class="form-group"><label>Start Date</label>
+                <input type="date" id="archive-manual-start">
+              </div>
+              <div class="form-group"><label>End Date</label>
+                <input type="date" id="archive-manual-end">
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btn-archive-manual">Archive This Period</button>
+            <div id="archive-manual-status" class="text-muted mt-8"></div>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -630,6 +789,40 @@
   </div>
 </div></div>
 
+
+<!-- Edit Submission Modal -->
+<div class="modal-overlay" id="modal-submission"><div class="modal-box" style="max-width:680px">
+  <h3>Edit Submission</h3>
+  <input type="hidden" id="sub-edit-id">
+  <div class="form-row">
+    <div class="form-group" style="flex:1"><label>Event Name</label><input type="text" id="sub-edit-name" style="width:100%"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Date</label><input type="date" id="sub-edit-date"></div>
+    <div class="form-group"><label>End Date (multi-day)</label><input type="date" id="sub-edit-date-end"></div>
+    <div class="form-group"><label>Start Time</label><input type="time" id="sub-edit-start-time"></div>
+    <div class="form-group"><label>End Time</label><input type="time" id="sub-edit-end-time"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group" style="flex:1"><label>Location</label><input type="text" id="sub-edit-location" style="width:100%"></div>
+    <div class="form-group"><label>Category</label>
+      <select id="sub-edit-category">
+        <option value="">—</option>
+        <option>Recital / Concert</option><option>Lecture</option><option>Workshop</option>
+        <option>Meeting</option><option>Audition</option><option>Masterclass</option><option>Other</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group mb-10"><label>Description</label><textarea id="sub-edit-description" rows="3" style="width:100%"></textarea></div>
+  <div class="form-group mb-10"><label>Review Notes (internal)</label><textarea id="sub-edit-notes" rows="2" style="width:100%"></textarea></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-submission')">Cancel</button>
+    <button class="btn btn-danger btn-sm" id="btn-sub-reject" style="margin-right:auto">Reject</button>
+    <button class="btn btn-primary" id="btn-sub-save-edit">Save Changes</button>
+    <button class="btn btn-gold" id="btn-sub-approve">✓ Approve &amp; Add to Calendar</button>
+  </div>
+</div></div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -661,6 +854,13 @@
     <div class="form-group"><label>Frequency</label><select id="task-freq"><option value="Once">Once</option><option value="Semester">Each Semester</option><option value="Annual">Annual</option></select></div>
   </div>
   <div class="form-group mb-10"><label>Notes</label><textarea id="task-notes" rows="2" style="width:100%"></textarea></div>
+  <details style="margin-bottom:14px">
+    <summary style="cursor:pointer;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);user-select:none">✉ Email Template (optional)</summary>
+    <div style="margin-top:10px">
+      <p class="text-muted" style="font-size:12px;margin-bottom:8px">Paste a generic version of the email you send to complete this task. Shown inline with the task — click to expand and copy.</p>
+      <textarea id="task-email-tpl" rows="6" style="width:100%;font-family:'Source Code Pro',monospace;font-size:12px" placeholder="Dear colleagues,&#10;&#10;..."></textarea>
+    </div>
+  </details>
   <div class="modal-footer">
     <button class="btn btn-outline" onclick="closeModal('modal-task')">Cancel</button>
     <button class="btn btn-primary" id="btn-save-task">Save & Sync to Google Cal</button>
@@ -857,6 +1057,8 @@
 
 <script src="js/config.js"></script>
 <script src="js/signups.js"></script>
+<script src="js/submissions.js"></script>
+<script src="js/archive.js"></script>
 <script src="js/google.js"></script>
 <script src="js/store.js"></script>
 <script src="js/calendar.js"></script>
