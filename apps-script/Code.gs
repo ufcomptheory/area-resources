@@ -869,23 +869,25 @@ function formatTimeFromDate(dt) {
   return hh + ':' + String(m).padStart(2,'0') + ' ' + ap;
 }
 
-// ── Scheduled: run Jan 1 to archive previous Fall ──
+// ── Scheduled: run on Month timer (day 1) — only executes in January ──
 function archiveFallSemester() {
+  const now = new Date();
+  if (now.getMonth() !== 0) return; // Only run in January (month 0)
   const props = PropertiesService.getScriptProperties();
   const calendarId = props.getProperty('ARCHIVE_CALENDAR_ID') || 'primary';
-  const now = new Date();
   const year = now.getFullYear() - 1; // previous year's fall
   const start = new Date(year, 7, 1);  // Aug 1
   const end   = new Date(year, 11, 31, 23, 59, 59); // Dec 31
   return archivePeriod(calendarId, start, end, 'Fall ' + year);
 }
 
-// ── Scheduled: run Aug 1 to archive previous Spring ──
-function archiveSpriingSemester() {
+// ── Scheduled: run on Month timer (day 1) — only executes in August ──
+function archiveSpringAndSummer() {
+  const now = new Date();
+  if (now.getMonth() !== 7) return; // Only run in August (month 7)
   const props = PropertiesService.getScriptProperties();
   const calendarId = props.getProperty('ARCHIVE_CALENDAR_ID') || 'primary';
-  const now = new Date();
-  const year = now.getFullYear(); // current year's spring
+  const year = now.getFullYear(); // current year's spring/summer
   const start = new Date(year, 0, 1);  // Jan 1
   const end   = new Date(year, 6, 31, 23, 59, 59); // Jul 31
   return archivePeriod(calendarId, start, end, 'Spring ' + year);
