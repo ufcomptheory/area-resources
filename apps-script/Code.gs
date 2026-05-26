@@ -406,12 +406,31 @@ function syncSessionCalendarEvent(slotsSheet, allRows, sheetId, sessionDate, she
 
 // ═══════════════════════════════════════════════════════════════
 // EMAIL
+// Uses GmailApp (sends as your real Gmail account, avoids spam)
+// with MailApp as a fallback if GmailApp isn't authorized yet.
 // ═══════════════════════════════════════════════════════════════
+
+function sendMail(opts) {
+  // opts: { to, subject, body, replyTo }
+  try {
+    // GmailApp sends as the real authenticated user — much less likely to hit spam
+    GmailApp.sendEmail(opts.to, opts.subject, opts.body, {
+      replyTo: opts.replyTo || ''
+    });
+  } catch(e) {
+    // Fallback to MailApp if GmailApp not authorized
+    Logger.log('GmailApp failed, falling back to MailApp: ' + e.message);
+    sendMail({
+      to: opts.to, subject: opts.subject, body: opts.body,
+      replyTo: opts.replyTo || ''
+    });
+  }
+}
 
 function sendConfirmation(name, email, date, startTime, endTime) {
   const props = PropertiesService.getScriptProperties();
   const adminEmail = props.getProperty('ADMIN_EMAIL') || Session.getActiveUser().getEmail();
-  MailApp.sendEmail({
+  sendMail({
     to: email,
     subject: 'Sign-Up Confirmed: ' + formatDate(date) + ' at ' + startTime,
     body: 'Hi ' + name + ',\n\nYou are confirmed for:\n\nDate: ' + formatDate(date) +
@@ -425,7 +444,7 @@ function sendConfirmation(name, email, date, startTime, endTime) {
 function sendCancellation(name, email, date, startTime, endTime) {
   const props = PropertiesService.getScriptProperties();
   const adminEmail = props.getProperty('ADMIN_EMAIL') || Session.getActiveUser().getEmail();
-  MailApp.sendEmail({
+  sendMail({
     to: email,
     subject: 'Sign-Up Cancelled: ' + formatDate(date) + ' at ' + startTime,
     body: 'Hi ' + name + ',\n\nYour sign-up for ' + formatDate(date) + ' at ' + startTime +
@@ -484,7 +503,7 @@ function sendPendingReminders() {
     const daysUntil = Math.round((new Date(String(date)+'T00:00:00') - new Date()) / 86400000);
     const label = daysUntil === 1 ? 'Tomorrow' : 'in ' + daysUntil + ' Days';
     try {
-      MailApp.sendEmail({
+      sendMail({
         to: String(email),
         subject: 'Reminder: Presentation ' + label + ' — ' + formatDate(date) + ' at ' + startTime,
         body: 'Hi ' + name + ',\n\nThis is a reminder that you are scheduled to present:\n\n' +
@@ -518,7 +537,7 @@ function testReminders() {
     if (sentCombos.has(comboKey)) { log.getRange(i+1,9).setValue(true); continue; }
     sentCombos.add(comboKey);
     try {
-      MailApp.sendEmail({
+      sendMail({
         to: String(email),
         subject: '[TEST REMINDER] ' + formatDate(date) + ' at ' + startTime,
         body: '[THIS IS A TEST — not a real reminder]\n\nHi ' + name +
@@ -667,7 +686,7 @@ function submitEvent(data) {
   const adminEmail  = props.getProperty('ADMIN_EMAIL') || Session.getActiveUser().getEmail();
   if (notifyEmail) {
     try {
-      MailApp.sendEmail({
+      sendMail({
         to: notifyEmail,
         subject: 'New Event Submission: ' + data.name,
         body: 'A new event has been submitted for your review.\n\n' +
