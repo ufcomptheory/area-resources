@@ -138,9 +138,39 @@ async function renderSuSheetsList() {
       return;
     }
     el.innerHTML = _suSheets.map(s => suSheetCard(s)).join('');
+    // Cache session dates for dashboard calendar (runs in background)
+    cacheSuSessionDates(_suSheets, url);
   } catch(e) {
     el.innerHTML = `<div class="text-muted" style="color:var(--red)">Could not connect to Apps Script: ${e.message}</div>`;
   }
+}
+
+// Fetch slot data for each sheet and cache unique session dates for the dashboard calendar
+async function cacheSuSessionDates(sheets, url) {
+  const sessions = [];
+  for (const sheet of sheets) {
+    try {
+      const resp = await fetch(url + '?action=getSheet&sheetId=' + encodeURIComponent(sheet.id));
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data.error || !data.slots) continue;
+      // Get unique dates with their first start time
+      const byDate = {};
+      data.slots.forEach(s => {
+        if (!s.date) return;
+        if (!byDate[s.date] || s.startTime < byDate[s.date].startTime) {
+          byDate[s.date] = { date: s.date, title: sheet.title, startTime: s.startTime };
+        }
+      });
+      Object.values(byDate).forEach(d => sessions.push(d));
+    } catch(e) { /* skip failed sheet */ }
+  }
+  if (!STORE.settings.signups) STORE.settings.signups = {};
+  STORE.settings.signups.cachedSessions = sessions;
+  save();
+  // Refresh calendar views if currently visible
+  if (document.getElementById('page-calendar') && document.getElementById('page-calendar').classList.contains('active')) renderCalendar();
+  if (document.getElementById('mini-cal')) renderMiniCal();
 }
 
 function suSheetCard(s) {

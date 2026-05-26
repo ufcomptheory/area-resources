@@ -15,6 +15,10 @@ function getItemsForMonth(y, m) {
     ...(STORE.events||[]).filter(e=>e.date&&e.date.startsWith(prefix)).map(e=>({date:e.date,title:e.title,type:'event',time:e.time})),
     ...(STORE.meetings||[]).filter(m=>m.date&&m.date.startsWith(prefix)).map(m=>({date:m.date,title:mtgName,type:'meeting',time:m.time})),
     ...(STORE.tasks||[]).filter(t=>!t.done&&t.due&&t.due.startsWith(prefix)).map(t=>({date:t.due,title:'🔔 '+t.title,type:'task'})),
+    // Sign-up sheet sessions cached from the Apps Script backend
+    ...((STORE.settings&&STORE.settings.signups&&STORE.settings.signups.cachedSessions)||[])
+      .filter(s=>s.date&&s.date.startsWith(prefix))
+      .map(s=>({date:s.date,title:s.title,type:'signup',time:s.startTime})),
   ];
   return all;
 }
@@ -59,7 +63,7 @@ function renderMiniCal() {
     if (items.length) cls += ' has-event';
     // Show dots for different types
     const dots = [...new Set(items.map(e=>e.type))].map(t=>
-      `<span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:${t==='meeting'?'var(--gold)':t==='task'?'var(--red)':'var(--blue)'};margin:0 1px"></span>`
+      `<span style="display:inline-block;width:4px;height:4px;border-radius:50%;background:${t==='meeting'?'var(--gold)':t==='task'?'var(--red)':t==='signup'?'#2d7a4f':'var(--blue)'};margin:0 1px"></span>`
     ).join('');
     html += `<div class="day ${cls}" title="${tip}">${d}${dots?`<div style="line-height:1">${dots}</div>`:''}</div>`;
   }
@@ -69,6 +73,7 @@ function renderMiniCal() {
     <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gold);margin-right:3px"></span>Meeting</span>
     <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:3px"></span>Task</span>
     <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--blue);margin-right:3px"></span>Event</span>
+    <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#2d7a4f;margin-right:3px"></span>Sign-Up</span>
   </div>`;
   el.innerHTML = html;
 }
@@ -96,7 +101,7 @@ function renderFullCal() {
     byDay[d].push(e);
   });
 
-  const typeColor = { event:'var(--blue)', meeting:'var(--gold)', task:'var(--red)' };
+  const typeColor = { event:'var(--blue)', meeting:'var(--gold)', task:'var(--red)', signup:'#2d7a4f' };
 
   let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
   ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d =>
