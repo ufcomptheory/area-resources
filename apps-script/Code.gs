@@ -18,16 +18,27 @@ const COL = { ID:0, BLOCK_ID:1, BLOCK_HEADING:2, IS_RECURRING:3, DATE:4,
 function doGet(e) {
   const action = e.parameter.action || '';
   try {
-    if (action === 'getSheet')    return jsonResponse(getSheet(e.parameter.sheetId));
-    if (action === 'listSheets')  return jsonResponse(listSheets());
-    if (['claim','cancel','createSheet','deleteSheet','seedCalendar'].includes(action)) {
+    if (action === 'getSheet')       return jsonResponse(getSheet(e.parameter.sheetId));
+    if (action === 'listSheets')     return jsonResponse(listSheets());
+    if (action === 'getSubmitConfig')return jsonResponse(getSubmitConfig());
+    if (action === 'getSubmissions') return jsonResponse(getSubmissions(e.parameter.status ? {status:e.parameter.status} : {}));
+    if (action === 'getArchivedEvents') return jsonResponse(getArchivedEvents(e.parameter.semester ? {semester:e.parameter.semester} : {}));
+    if (['claim','cancel','createSheet','deleteSheet','seedCalendar',
+         'submitEvent','updateSubmission','approveSubmission','rejectSubmission',
+         'archiveCustomPeriod','getArchiveExportHtml'].includes(action)) {
       const data = JSON.parse(decodeURIComponent(e.parameter.payload || '{}'));
       data.action = action;
-      if (action === 'claim')         return jsonResponse(claimSlot(data));
-      if (action === 'cancel')        return jsonResponse(cancelSlot(data));
-      if (action === 'createSheet')   return jsonResponse(createSheet(data));
-      if (action === 'deleteSheet')   return jsonResponse(deleteSheet(data));
-      if (action === 'seedCalendar')  return jsonResponse(seedCalendar(data));
+      if (action === 'claim')               return jsonResponse(claimSlot(data));
+      if (action === 'cancel')              return jsonResponse(cancelSlot(data));
+      if (action === 'createSheet')         return jsonResponse(createSheet(data));
+      if (action === 'deleteSheet')         return jsonResponse(deleteSheet(data));
+      if (action === 'seedCalendar')        return jsonResponse(seedCalendar(data));
+      if (action === 'submitEvent')         return jsonResponse(submitEvent(data));
+      if (action === 'updateSubmission')    return jsonResponse(updateSubmission(data));
+      if (action === 'approveSubmission')   return jsonResponse(approveSubmission(data));
+      if (action === 'rejectSubmission')    return jsonResponse(rejectSubmission(data));
+      if (action === 'archiveCustomPeriod') return jsonResponse(archiveCustomPeriod(data));
+      if (action === 'getArchiveExportHtml')return jsonResponse(getArchiveExportHtml(data));
     }
     return jsonResponse({ error: 'Unknown action: ' + action });
   } catch(err) { return jsonResponse({ error: err.message }); }
@@ -607,4 +618,350 @@ function formatDate(dateStr) {
   if (!m) return String(dateStr);
   const d=new Date(Date.UTC(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])));
   return d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EVENT SUBMISSIONS
+// ═══════════════════════════════════════════════════════════════
+
+const SUBMISSIONS_SHEET = 'EventSubmissions';
+
+// Called by doGet routing — add these to the action dispatcher:
+// 'getSubmitConfig', 'submitEvent', 'getSubmissions'
+
+function getSubmitConfig() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    passphrase: props.getProperty('SUBMIT_PASSPHRASE') || '',
+    pageTitle: props.getProperty('SUBMIT_PAGE_TITLE') || 'Submit an Event'
+  };
+}
+
+function submitEvent(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SUBMISSIONS_SHEET);
+    const headers = ['id','status','name','date','dateEnd','startTime','endTime',
+                     'location','description','category','submittedBy','submitterRole',
+                     'submitterEmail','submittedAt','gcalEventId','reviewNotes'];
+    sheet.appendRow(headers);
+    sheet.getRange(1,1,1,headers.length).setFontWeight('bold')
+      .setBackground('#1a2744').setFontColor('#ffffff');
+    // Force date columns to text
+    sheet.getRange(1,3,1000,2).setNumberFormat('@STRING@');
+  }
+  const id = Utilities.getUuid();
+  sheet.appendRow([
+    id, 'pending',
+    String(data.name||''), String(data.date||''), String(data.dateEnd||''),
+    String(data.startTime||''), String(data.endTime||''),
+    String(data.location||''), String(data.description||''),
+    String(data.category||''), String(data.submittedBy||''),
+    String(data.submitterRole||''), String(data.submitterEmail||''),
+    String(data.submittedAt||new Date().toISOString()), '', ''
+  ]);
+  // Email notification to admin
+  const props = PropertiesService.getScriptProperties();
+  const notifyEmail = props.getProperty('SUBMIT_NOTIFY_EMAIL') || '';
+  const adminEmail  = props.getProperty('ADMIN_EMAIL') || Session.getActiveUser().getEmail();
+  if (notifyEmail) {
+    try {
+      MailApp.sendEmail({
+        to: notifyEmail,
+        subject: 'New Event Submission: ' + data.name,
+        body: 'A new event has been submitted for your review.\n\n' +
+              'Event: ' + data.name + '\n' +
+              'Date: ' + formatDate(data.date) + (data.startTime?' at '+data.startTime:'') + '\n' +
+              'Location: ' + (data.location||'Not specified') + '\n' +
+              'Category: ' + (data.category||'Not specified') + '\n' +
+              'Submitted by: ' + data.submittedBy + (data.submitterRole?' ('+data.submitterRole+')':'') + '\n' +
+              (data.submitterEmail?'Submitter email: '+data.submitterEmail+'\n':'') +
+              '\nDescription:\n' + (data.description||'None provided') +
+              '\n\nLog in to the dashboard to review and approve.',
+        replyTo: data.submitterEmail || adminEmail
+      });
+    } catch(e) { Logger.log('Notification email failed: '+e.message); }
+  }
+  return { ok: true, id };
+}
+
+function getSubmissions(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+  if (!sheet) return { submissions: [] };
+  const rows = sheet.getDataRange().getValues();
+  const submissions = [];
+  for (let i = 1; i < rows.length; i++) {
+    const [id,status,name,date,dateEnd,startTime,endTime,location,description,
+           category,submittedBy,submitterRole,submitterEmail,submittedAt,gcalEventId,reviewNotes] = rows[i];
+    if (!id) continue;
+    const statusFilter = data && data.status;
+    if (statusFilter && String(status) !== statusFilter) continue;
+    submissions.push({
+      id:String(id), status:String(status||'pending'), name:String(name||''),
+      date:normalizeDate(date), dateEnd:normalizeDate(dateEnd||''),
+      startTime:normalizeTime(startTime||''), endTime:normalizeTime(endTime||''),
+      location:String(location||''), description:String(description||''),
+      category:String(category||''), submittedBy:String(submittedBy||''),
+      submitterRole:String(submitterRole||''), submitterEmail:String(submitterEmail||''),
+      submittedAt:String(submittedAt||''), gcalEventId:String(gcalEventId||''),
+      reviewNotes:String(reviewNotes||'')
+    });
+  }
+  return { submissions };
+}
+
+function updateSubmission(data) {
+  // Update fields on a submission row (for editing before approval)
+  const { id, fields } = data;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+  if (!sheet) throw new Error('Submissions sheet not found');
+  const rows = sheet.getDataRange().getValues();
+  const colMap = {status:2,name:3,date:4,dateEnd:5,startTime:6,endTime:7,
+                  location:8,description:9,category:10,reviewNotes:16};
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(id)) {
+      Object.entries(fields).forEach(([key, val]) => {
+        const col = colMap[key];
+        if (col) sheet.getRange(i+1, col).setValue(String(val));
+      });
+      return { ok: true };
+    }
+  }
+  throw new Error('Submission not found');
+}
+
+function approveSubmission(data) {
+  const { id, calendarId } = data;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+  if (!sheet) throw new Error('Submissions sheet not found');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) !== String(id)) continue;
+    const [,status,name,date,dateEnd,startTime,endTime,location,description] = rows[i];
+    // Create calendar event
+    const cal = CalendarApp.getCalendarById(calendarId||'primary') || CalendarApp.getDefaultCalendar();
+    const startDt = buildDateTime(normalizeDate(date), normalizeTime(startTime||'')||'00:00');
+    let endDt;
+    if (endTime) {
+      endDt = buildDateTime(normalizeDate(date), normalizeTime(endTime));
+    } else if (dateEnd && normalizeDate(dateEnd) !== normalizeDate(date)) {
+      endDt = buildDateTime(normalizeDate(dateEnd), '23:59');
+    } else {
+      endDt = new Date(startDt.getTime() + 2*60*60000); // default 2hr
+    }
+    const ev = cal.createEvent(String(name), startDt, endDt, {
+      location: String(location||''),
+      description: String(description||'')
+    });
+    // Mark approved, store gcalEventId
+    sheet.getRange(i+1, 2).setValue('approved');
+    sheet.getRange(i+1, 15).setValue(ev.getId());
+    return { ok: true, gcalEventId: ev.getId() };
+  }
+  throw new Error('Submission not found');
+}
+
+function rejectSubmission(data) {
+  const { id, reviewNotes } = data;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+  if (!sheet) throw new Error('Submissions sheet not found');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(id)) {
+      sheet.getRange(i+1, 2).setValue('rejected');
+      if (reviewNotes) sheet.getRange(i+1, 16).setValue(String(reviewNotes));
+      return { ok: true };
+    }
+  }
+  throw new Error('Submission not found');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CALENDAR EVENT ARCHIVE
+// ═══════════════════════════════════════════════════════════════
+
+const ARCHIVE_SHEET = 'EventArchive';
+
+// ── Determine source tag for a calendar event ──
+function getEventSource(ev) {
+  try {
+    const ext = ev.getExtendedProperty('source') || '';
+    if (ext === 'uf_area_head') return 'Sign-Up Sheet';
+  } catch(e) {}
+  // Check if it was an approved submission by looking up gcalEventId in submissions
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const subSheet = ss.getSheetByName(SUBMISSIONS_SHEET);
+    if (subSheet) {
+      const rows = subSheet.getDataRange().getValues();
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][14]) === ev.getId()) return 'Submission';
+      }
+    }
+  } catch(e) {}
+  return 'Manual';
+}
+
+// ── Core archive function: fetch events from GCal and write to archive sheet ──
+function archivePeriod(calendarId, startDate, endDate, semesterLabel) {
+  const cal = CalendarApp.getCalendarById(calendarId) || CalendarApp.getDefaultCalendar();
+  const events = cal.getEvents(startDate, endDate);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ARCHIVE_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(ARCHIVE_SHEET);
+    const headers = ['id','semester','name','date','dateEnd','startTime','endTime',
+                     'location','description','category','source','gcalEventId','archivedAt'];
+    sheet.appendRow(headers);
+    sheet.getRange(1,1,1,headers.length).setFontWeight('bold')
+      .setBackground('#1a2744').setFontColor('#ffffff');
+    sheet.getRange(1, 4, 5000, 2).setNumberFormat('@STRING@');
+  }
+  // Remove existing entries for this semester (clean re-archive)
+  const existingRows = sheet.getDataRange().getValues();
+  const rowsToDelete = [];
+  for (let i = existingRows.length - 1; i >= 1; i--) {
+    if (String(existingRows[i][1]) === semesterLabel) rowsToDelete.push(i + 1);
+  }
+  rowsToDelete.forEach(r => sheet.deleteRow(r));
+
+  // Write new entries
+  const now = new Date().toISOString();
+  let count = 0;
+  events.forEach(ev => {
+    try {
+      const start = ev.getStartTime();
+      const end   = ev.getEndTime();
+      const allDay = ev.isAllDayEvent();
+      const dateStr    = start.toISOString().slice(0,10);
+      const dateEndStr = end.toISOString().slice(0,10);
+      const startStr   = allDay ? '' : formatTimeFromDate(start);
+      const endStr     = allDay ? '' : formatTimeFromDate(end);
+      const source = getEventSource(ev);
+      sheet.appendRow([
+        Utilities.getUuid(), semesterLabel,
+        ev.getTitle(), dateStr,
+        dateStr !== dateEndStr ? dateEndStr : '',
+        startStr, endStr,
+        ev.getLocation() || '',
+        ev.getDescription() || '',
+        '', // category not stored in gcal
+        source,
+        ev.getId(),
+        now
+      ]);
+      count++;
+    } catch(e) { Logger.log('Error archiving event: ' + e.message); }
+  });
+  Logger.log('Archived ' + count + ' events for ' + semesterLabel);
+  return { ok: true, count, semesterLabel };
+}
+
+function formatTimeFromDate(dt) {
+  const h = dt.getHours(), m = dt.getMinutes();
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return hh + ':' + String(m).padStart(2,'0') + ' ' + ap;
+}
+
+// ── Scheduled: run Jan 1 to archive previous Fall ──
+function archiveFallSemester() {
+  const props = PropertiesService.getScriptProperties();
+  const calendarId = props.getProperty('ARCHIVE_CALENDAR_ID') || 'primary';
+  const now = new Date();
+  const year = now.getFullYear() - 1; // previous year's fall
+  const start = new Date(year, 7, 1);  // Aug 1
+  const end   = new Date(year, 11, 31, 23, 59, 59); // Dec 31
+  return archivePeriod(calendarId, start, end, 'Fall ' + year);
+}
+
+// ── Scheduled: run Aug 1 to archive previous Spring ──
+function archiveSpriingSemester() {
+  const props = PropertiesService.getScriptProperties();
+  const calendarId = props.getProperty('ARCHIVE_CALENDAR_ID') || 'primary';
+  const now = new Date();
+  const year = now.getFullYear(); // current year's spring
+  const start = new Date(year, 0, 1);  // Jan 1
+  const end   = new Date(year, 6, 31, 23, 59, 59); // Jul 31
+  return archivePeriod(calendarId, start, end, 'Spring ' + year);
+}
+
+// ── Manual: archive any arbitrary period from dashboard ──
+function archiveCustomPeriod(data) {
+  const { calendarId, startDate, endDate, semesterLabel } = data;
+  const start = new Date(startDate + 'T00:00:00');
+  const end   = new Date(endDate   + 'T23:59:59');
+  return archivePeriod(calendarId, start, end, semesterLabel);
+}
+
+// ── Read archived events (optionally filtered by semester) ──
+function getArchivedEvents(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(ARCHIVE_SHEET);
+  if (!sheet) return { events: [], semesters: [] };
+  const rows = sheet.getDataRange().getValues();
+  const events = [];
+  const semSet = new Set();
+  const semFilter = data && data.semester ? data.semester : null;
+  for (let i = 1; i < rows.length; i++) {
+    const [id,semester,name,date,dateEnd,startTime,endTime,
+           location,description,category,source,gcalEventId,archivedAt] = rows[i];
+    if (!id) continue;
+    semSet.add(String(semester));
+    if (semFilter && String(semester) !== semFilter) continue;
+    events.push({
+      id: String(id), semester: String(semester),
+      name: String(name||''),
+      date: normalizeDate(date), dateEnd: normalizeDate(dateEnd||''),
+      startTime: normalizeTime(startTime||''), endTime: normalizeTime(endTime||''),
+      location: String(location||''), description: String(description||''),
+      category: String(category||''), source: String(source||''),
+      gcalEventId: String(gcalEventId||''), archivedAt: String(archivedAt||'')
+    });
+  }
+  // Sort events by date
+  events.sort((a,b) => a.date.localeCompare(b.date));
+  return { events, semesters: [...semSet].sort() };
+}
+
+// ── Export as printable HTML ──
+function getArchiveExportHtml(data) {
+  const { semester } = data;
+  const result = getArchivedEvents({ semester });
+  const events = result.events;
+  if (!events.length) return { html: '<p>No events archived for this semester.</p>' };
+  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${semester} — Composition Area Events</title>
+<style>
+  body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#1a2744;padding:0 20px;}
+  h1{font-size:24px;border-bottom:3px solid #c9a84c;padding-bottom:10px;margin-bottom:24px;}
+  .event{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #ddd8cc;}
+  .event:last-child{border-bottom:none;}
+  .ev-name{font-size:16px;font-weight:bold;margin-bottom:4px;}
+  .ev-meta{font-size:13px;color:#5a5649;margin-bottom:4px;}
+  .ev-desc{font-size:13px;margin-top:6px;line-height:1.6;}
+  .ev-source{font-size:11px;color:#9e9788;margin-top:4px;}
+  @media print{body{margin:20px;}.ev-source{display:none;}}
+</style></head><body>
+<h1>Composition &amp; Theory Area — ${semester}</h1>`;
+  events.forEach(ev => {
+    const timeStr = ev.startTime ? ev.startTime + (ev.endTime ? '–' + ev.endTime : '') : '';
+    html += `<div class="event">
+  <div class="ev-name">${escHtml(ev.name)}</div>
+  <div class="ev-meta">${formatDate(ev.date)}${timeStr?' · '+timeStr:''}${ev.location?' · '+escHtml(ev.location):''}</div>
+  ${ev.description ? `<div class="ev-desc">${escHtml(ev.description).replace(/\n/g,'<br>')}</div>` : ''}
+  <div class="ev-source">Source: ${escHtml(ev.source)}</div>
+</div>`;
+  });
+  html += '</body></html>';
+  return { html };
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
