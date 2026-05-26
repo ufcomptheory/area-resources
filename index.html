@@ -709,13 +709,13 @@
               Set up two time-based triggers in Apps Script to auto-archive each semester:
             </p>
             <table class="data-table" style="font-size:12px;margin-bottom:14px">
-              <thead><tr><th>Function</th><th>When to Run</th><th>What It Archives</th></tr></thead>
+              <thead><tr><th>Function</th><th>Trigger Type</th><th>Day</th><th>What It Archives</th></tr></thead>
               <tbody>
-                <tr><td><code>archiveFallSemester</code></td><td>Jan 1, once per year</td><td>Aug 1 – Dec 31 of previous year → "Fall YYYY"</td></tr>
-                <tr><td><code>archiveSpriingSemester</code></td><td>Aug 1, once per year</td><td>Jan 1 – Jul 31 of current year → "Spring YYYY"</td></tr>
+                <tr><td><code>archiveFallSemester</code></td><td>Month timer</td><td>1st of month (runs Jan 1, skips other months automatically)</td><td>Aug 1 – Dec 31 of previous year → "Fall YYYY"</td></tr>
+                <tr><td><code>archiveSpringAndSummer</code></td><td>Month timer</td><td>1st of month (runs Aug 1, skips other months automatically)</td><td>Jan 1 – Jul 31 of current year → "Spring YYYY"</td></tr>
               </tbody>
             </table>
-            <p class="text-muted" style="font-size:12px;margin-bottom:10px">In Apps Script: <strong>Triggers (clock icon) → + Add Trigger</strong> for each function. Set to "Year timer" and the appropriate month/day.</p>
+            <p class="text-muted" style="font-size:12px;margin-bottom:10px">In Apps Script: <strong>Triggers (clock icon) → + Add Trigger</strong>. Set source to <strong>Time-driven</strong>, type to <strong>Month timer</strong>, day of month <strong>1</strong>, time <strong>1am–2am</strong>. The functions check internally whether it's the right month and exit immediately if not.</p>
             <p class="text-muted" style="font-size:12px">Also set <code>ARCHIVE_CALENDAR_ID</code> in Script Properties to the calendar ID.</p>
           </div>
 
