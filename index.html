@@ -51,7 +51,6 @@
       <div class="sidebar-section">
         <div class="sidebar-label">Overview</div>
         <div class="nav-item active" data-page="dashboard"><span class="icon">🏛</span> Dashboard</div>
-        <div class="nav-item" data-page="calendar"><span class="icon">📅</span> Calendar</div>
         <div class="nav-item" data-page="tasks"><span class="icon">🔔</span> Tasks & Reminders</div>
       </div>
       <div class="sidebar-section">
@@ -97,10 +96,13 @@
         </div>
       </div>
 
-      <!-- CALENDAR -->
+      <!-- CALENDAR (hidden from nav — accessible via direct navTo for cleanup) -->
       <div class="page" id="page-calendar">
-        <div class="page-title">Calendar</div>
-        <div class="page-sub">All events synced to Google Calendar</div>
+        <div class="page-title">Manual Events</div>
+        <div class="page-sub">These are events you added manually via this dashboard. Use this page to clean up, then use your Google Calendar for viewing.</div>
+        <div class="flex-row mb-16">
+          <button class="btn btn-danger" id="btn-clear-all-events" onclick="clearAllEvents()">🗑 Clear All Manual Events</button>
+        </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
             <button class="btn btn-outline btn-sm" id="cal-prev">‹</button>
