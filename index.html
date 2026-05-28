@@ -457,6 +457,54 @@
             <div class="flex-row"><input type="text" id="new-degree" placeholder="New degree…" style="width:160px"><button class="btn btn-outline btn-sm" id="btn-add-degree">Add</button></div>
           </div>
           <div class="card" style="grid-column:1/-1">
+            <div class="card-title">🏛 UFL Calendar Account</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">Connect your UFL Google account (scott.lee@ufl.edu) to push meetings to your university calendar and send faculty invitations from your official address.</p>
+            <div class="flex-row mb-10" style="align-items:center;gap:14px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);margin-bottom:4px">Status</div>
+                <div id="ufl-cal-badge" style="font-size:13px;color:var(--gray-400)">Not connected</div>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btn-connect-ufl" onclick="connectUFLCalendar()">Connect UFL Account</button>
+              <button class="btn btn-outline btn-sm" id="btn-disconnect-ufl" style="display:none" onclick="disconnectUFLCalendar()">Disconnect</button>
+            </div>
+            <div class="form-group mb-10"><label>UFL Calendar ID (leave as "primary" for default calendar)</label>
+              <input type="text" id="ufl-cal-id" placeholder="primary" style="width:100%">
+              <div class="text-muted" style="margin-top:4px">Find in Google Calendar (UFL account) → Settings → your calendar → Calendar ID.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-save-ufl-cal">Save UFL Calendar ID</button>
+          </div>
+          <div class="card" style="grid-column:1/-1">
+            <div class="card-title">📅 Meeting Calendar Targets</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">Choose which calendars receive meeting events by default. You can override per meeting if needed.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+              <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="mtg-cal-primary" style="width:16px;height:16px;accent-color:var(--navy)">
+                <div><strong>Primary Calendar</strong> <span class="text-muted">(scottleemusic.net)</span></div>
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="mtg-cal-ufl" style="width:16px;height:16px;accent-color:var(--navy)">
+                <div><strong>UFL Calendar</strong> <span class="text-muted">(scott.lee@ufl.edu — must be connected above)</span></div>
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="mtg-send-invites" style="width:16px;height:16px;accent-color:var(--navy)">
+                <div><strong>Send faculty invitations</strong> <span class="text-muted">(when UFL Calendar is checked — invites sent from UFL account)</span></div>
+              </label>
+            </div>
+            <div id="mtg-named-cal-checks" class="mb-10"></div>
+            <button class="btn btn-primary btn-sm" id="btn-save-mtg-cals">Save Calendar Targets</button>
+          </div>
+          <div class="card" style="grid-column:1/-1">
+            <div class="card-title">👥 Faculty Invitation List</div>
+            <p class="text-muted" style="font-size:12px;margin-bottom:14px;line-height:1.6">Email addresses that receive calendar invitations when a meeting is created with "Send faculty invitations" enabled. Add individually or pull from your faculty roster.</p>
+            <div id="faculty-invite-list" class="mb-10"></div>
+            <div class="flex-row">
+              <div class="form-group"><label>Email Address</label><input type="email" id="new-invite-email" placeholder="colleague@ufl.edu" style="width:260px"></div>
+              <div class="form-group"><label>Name (optional)</label><input type="text" id="new-invite-name" placeholder="Dr. Smith" style="width:180px"></div>
+              <button class="btn btn-outline btn-sm" id="btn-add-invite" style="margin-top:18px">+ Add</button>
+            </div>
+            <button class="btn btn-outline btn-sm mt-8" id="btn-pull-faculty-emails">↓ Pull emails from Faculty roster</button>
+          </div>
+          <div class="card" style="grid-column:1/-1">
             <div class="card-title">💾 Data Management</div>
             <p class="text-muted" style="font-size:12px;margin-bottom:16px;line-height:1.6">
               Your data is auto-saved to Google Drive whenever you make changes. Use these tools to download a local backup, restore from a previous backup file, or reset the dashboard to a clean state.
