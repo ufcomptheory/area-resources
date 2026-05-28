@@ -49,7 +49,7 @@ window.navTo = function(page) {
 
 function renderPage(page) {
   const map = {
-    dashboard: renderDashboard, calendar: renderCalendar, tasks: renderTasks,
+    dashboard: renderDashboard, tasks: renderTasks,
     meetings: renderMeetings, rotations: renderRotations, gta: renderGTA,
     studio: renderStudio, students: renderStudents, faculty: renderFaculty,
     presentations: renderPresentations, admissions: renderAdmissions, settings: renderSettings, signups: renderSignups, submissions: renderSubmissions, archive: renderArchive

@@ -71,8 +71,7 @@ function renderMiniCal() {
   // Legend
   html += `<div style="display:flex;gap:10px;margin-top:8px;font-size:10px;color:var(--gray-600)">
     <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gold);margin-right:3px"></span>Meeting</span>
-    <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:3px"></span>Task</span>
-    <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--blue);margin-right:3px"></span>Event</span>
+    <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:3px"></span>Task due</span>
     <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#2d7a4f;margin-right:3px"></span>Sign-Up</span>
   </div>`;
   el.innerHTML = html;
