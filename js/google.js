@@ -1,15 +1,8 @@
 // ═══════════════════════════════════════════════════════
-// GOOGLE INTEGRATION v6
-// Primary account only: Drive + Calendar (scottleemusic.net)
-// UFL uses Exchange — invitations via .ics file download
+// GOOGLE INTEGRATION
 // ═══════════════════════════════════════════════════════
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/userinfo.email'
-].join(' ');
+const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
 
 let _accessToken = null;
 let _driveFileId = null;
@@ -38,7 +31,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   tryAutoSignIn();
 });
 
-// ── Primary sign-in (silent on load) ──
+// ── Silent sign-in on load ──
 function tryAutoSignIn() {
   google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.GOOGLE_CLIENT_ID,
@@ -197,7 +190,7 @@ async function calCreateOnTarget(calendarId, token, body) {
   return (await resp.json()).id;
 }
 
-// Returns true on success, false if event not found (404) or update failed
+// Returns true on success, false if not found (404) or failed
 async function calUpdateOnTarget(calendarId, eventId, token, body) {
   try {
     const resp = await fetch(
@@ -219,52 +212,49 @@ async function calDeleteOnTarget(calendarId, eventId, token) {
   } catch(e) {}
 }
 
-// ── Create event on all selected targets ──
+// ── Create event on multiple targets ──
 async function calCreateMulti(title, dateStr, timeStr, endTimeStr, description, category, targets) {
   const results = [];
   for (const t of targets) {
     try {
-      const body = t.attendees && t.attendees.length
-        ? buildCalBody(title, dateStr, timeStr, endTimeStr, description, category, t.attendees)
-        : buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
+      const body = buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
       const id = await calCreateOnTarget(t.calendarId, t.token, body);
       results.push({ label: t.label, gcalId: id });
-      showToast(`✅ Added to ${t.label}`, 'success');
+      showToast('✅ Added to ' + t.label, 'success');
     } catch(e) {
-      showToast(`Calendar sync failed (${t.label}): ${e.message}`, 'error');
+      showToast('Calendar sync failed (' + t.label + '): ' + e.message, 'error');
       results.push({ label: t.label, gcalId: null });
     }
   }
   return results;
 }
 
-// ── Update or recreate event on all targets ──
+// ── Update or recreate on multiple targets ──
 async function calSyncMulti(existingIds, title, dateStr, timeStr, endTimeStr, description, category, targets) {
   const results = [];
   for (const t of targets) {
     const existing = existingIds && existingIds[t.label];
-    const body = t.attendees && t.attendees.length
-      ? buildCalBody(title, dateStr, timeStr, endTimeStr, description, category, t.attendees)
-      : buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
+    const body = buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
     if (existing) {
       const ok = await calUpdateOnTarget(t.calendarId, existing, t.token, body);
-      if (ok) { results.push({ label: t.label, gcalId: existing }); showToast(`✅ Updated ${t.label}`, 'success'); continue; }
+      if (ok) { results.push({ label: t.label, gcalId: existing }); showToast('✅ Updated ' + t.label, 'success'); continue; }
       // PATCH failed — delete stale and recreate
       await calDeleteOnTarget(t.calendarId, existing, t.token).catch(()=>{});
     }
     try {
-      const id = await calCreateOnTarget(t.calendarId, t.token, body);
+      const body2 = buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
+      const id = await calCreateOnTarget(t.calendarId, t.token, body2);
       results.push({ label: t.label, gcalId: id });
-      showToast(`✅ Added to ${t.label}`, 'success');
+      showToast('✅ Added to ' + t.label, 'success');
     } catch(e) {
-      showToast(`Calendar sync failed (${t.label}): ${e.message}`, 'error');
+      showToast('Calendar sync failed (' + t.label + '): ' + e.message, 'error');
       results.push({ label: t.label, gcalId: null });
     }
   }
   return results;
 }
 
-// ── Backwards-compatible single-target wrappers ──
+// ── Single-target wrappers (backwards compatible) ──
 async function calCreateEvent(title, dateStr, timeStr, endTimeStr, description, category) {
   if (!_accessToken) return null;
   try {
@@ -306,7 +296,6 @@ async function calCreateReminder(title, dateStr, notes, urgency) {
 }
 
 // ── Build meeting targets from settings ──
-// (Primary + Named Calendars only — UFL handled via .ics)
 function buildMeetingTargets() {
   const targets = [];
   const ms = STORE.settings.meetingCalendars || {};
@@ -325,10 +314,7 @@ function getFacultyAttendees() {
   return ((STORE.settings.facultyInviteList || [])).map(a => a.email).filter(Boolean);
 }
 
-// ─────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────
-
+// ── Helpers ──
 function parseDateTimeLocal(dateStr, timeStr) {
   const dt = new Date(dateStr + 'T00:00:00');
   const match = timeStr && timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
