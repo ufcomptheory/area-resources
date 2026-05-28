@@ -461,17 +461,14 @@ window.delMeeting = async function(id) {
   if(m) {
     // Delete the associated agenda-solicitation task and its calendar event
     await deleteMeetingTask(m.date);
-    // Delete meeting from all synced calendars
+    // Delete meeting from all synced calendars (primary + named only)
     const namedCals=(STORE.settings.signups&&STORE.settings.signups.namedCals)||[];
     if(m.gcalIds) {
       for(const [label, gcalId] of Object.entries(m.gcalIds)) {
         if(!gcalId) continue;
-        const token = label==='UFL Calendar' ? _uflToken : _accessToken;
-        const calId = label==='UFL Calendar'
-          ? ((STORE.settings.uflCalendar&&STORE.settings.uflCalendar.calendarId)||'primary')
-          : label==='Primary Calendar' ? CONFIG.CALENDAR_ID
+        const calId = label==='Primary Calendar' ? CONFIG.CALENDAR_ID
           : (namedCals.find(c=>c.nick===label)||{}).id||CONFIG.CALENDAR_ID;
-        if(token) await calDeleteOnTarget(calId, gcalId, token);
+        await calDeleteOnTarget(calId, gcalId, _accessToken);
       }
     } else if(m.gcalId) {
       await calDeleteEvent(m.gcalId);
