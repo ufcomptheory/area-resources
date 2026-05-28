@@ -277,7 +277,6 @@ window.delTask = async function(id) {
 };
 window.syncTaskToGcal = async function(id) {
   const t=STORE.tasks.find(t=>t.id===id); if(!t||!t.due) return;
-  if(t.gcalId) await calDeleteEvent(t.gcalId);
   const gcalId = await calCreateReminder(t.title, t.due, t.notes, t.urg||'med');
   if(gcalId){t.gcalId=gcalId; save(); renderTasks();}
 };
@@ -308,118 +307,12 @@ function renderMeetingsSchedule() {
     <td>${m.remindDays} days before</td>
     <td>${m.generated?'<span class="pill pill-gray">Recurring</span>':'<span class="pill pill-blue">One-off</span>'}</td>
     <td>${m.gcalId?'<span class="pill pill-green" style="font-size:10px">✓ Synced</span>':`<button class="btn-gcal btn-xs" onclick="syncMeetingToGcal('${m.id}')">Sync</button>`}</td>
-    <td style="display:flex;gap:4px;flex-wrap:wrap">
+    <td style="display:flex;gap:4px">
       <button class="btn btn-outline btn-xs" onclick="editMeeting('${m.id}')">✎ Edit</button>
-      <button class="btn btn-outline btn-xs" onclick="downloadMeetingICS('${m.id}')" title="Download .ics for Outlook invitation">📅 .ics</button>
-      <button class="btn btn-outline btn-xs" onclick="copyMeetingInvite('${m.id}')" title="Copy invitation email text">✉ Copy Invite</button>
       <button class="btn btn-danger btn-xs" onclick="delMeeting('${m.id}')">✕</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="7" class="text-muted" style="padding:16px">No upcoming meetings.</td></tr>';
 }
-// ── ICS generation helpers ──
-function parseTimeToDate(dateStr, timeStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  if (!timeStr) return d;
-  const m = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-  if (!m) return d;
-  let h = parseInt(m[1]), mn = parseInt(m[2]);
-  const ap = (m[3]||'').toUpperCase();
-  if (ap==='PM' && h<12) h+=12;
-  if (ap==='AM' && h===12) h=0;
-  d.setHours(h, mn, 0, 0);
-  return d;
-}
-
-function toICSDate(dt) {
-  // Format as YYYYMMDDTHHMMSSZ (UTC)
-  return dt.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
-}
-
-function generateICS(meeting, mtgName, attendees) {
-  const start = parseTimeToDate(meeting.date, meeting.time);
-  const end = meeting.timeEnd
-    ? parseTimeToDate(meeting.date, meeting.timeEnd)
-    : new Date(start.getTime() + 60*60000); // default 1 hour
-  const now = new Date();
-  const uid = meeting.id + '@area-head-dashboard';
-  const location = meeting.location || '';
-  const description = meeting.notes || '';
-  const attendeeLines = (attendees||[])
-    .map(email => `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${email}`)
-    .join('\r\n');
-
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Area Head Dashboard//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    `UID:${uid}`,
-    `DTSTAMP:${toICSDate(now)}`,
-    `DTSTART:${toICSDate(start)}`,
-    `DTEND:${toICSDate(end)}`,
-    `SUMMARY:${mtgName}`,
-    location ? `LOCATION:${location}` : '',
-    description ? `DESCRIPTION:${description.replace(/\n/g,'\\n')}` : '',
-    `ORGANIZER;CN=Area Head:mailto:scott.lee@ufl.edu`,
-    attendeeLines,
-    'BEGIN:VALARM',
-    'TRIGGER:-PT1H',
-    'ACTION:DISPLAY',
-    `DESCRIPTION:Reminder: ${mtgName}`,
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ].filter(l => l !== '').join('\r\n');
-
-  return lines;
-}
-
-window.downloadMeetingICS = function(id) {
-  const m = STORE.meetings.find(m=>m.id===id); if (!m) return;
-  const mtgName = STORE.settings.meetingName||'Comp/Theory Area Meeting';
-  const attendees = (STORE.settings.facultyInviteList||[]).map(a=>a.email).filter(Boolean);
-  const ics = generateICS(m, mtgName, attendees);
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = mtgName.replace(/[^a-z0-9]/gi,'_') + '_' + m.date + '.ics';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  showToast('📅 .ics downloaded — attach to email in Outlook to send invitations.', 'success');
-};
-
-window.copyMeetingInvite = function(id) {
-  const m = STORE.meetings.find(m=>m.id===id); if (!m) return;
-  const mtgName = STORE.settings.meetingName||'Comp/Theory Area Meeting';
-  const attendees = (STORE.settings.facultyInviteList||[]);
-  const toLine = attendees.map(a=>a.name?`${a.name} <${a.email}>`:a.email).join(', ');
-  const timeStr = m.time ? m.time + (m.timeEnd ? ' – ' + m.timeEnd : '') : 'Time TBD';
-  const text = [
-    `To: ${toLine||'[faculty list]'}`,
-    `Subject: ${mtgName} — ${fmtDate(m.date)}`,
-    '',
-    `Dear colleagues,`,
-    '',
-    `This is an invitation to the ${mtgName}.`,
-    '',
-    `Date: ${fmtDate(m.date)}`,
-    `Time: ${timeStr}`,
-    m.location ? `Location: ${m.location}` : '',
-    m.notes ? `\n${m.notes}` : '',
-    '',
-    'A calendar invitation (.ics file) is attached. Please accept to add this to your calendar.',
-    '',
-    'Best,',
-    ((_userInfo&&_userInfo.name)||'Scott Lee'),
-  ].filter(l => l !== null).join('\n');
-
-  navigator.clipboard.writeText(text)
-    .then(() => showToast('✉ Invitation email copied to clipboard — paste into Outlook and attach the .ics file.', 'success'))
-    .catch(() => showToast('Could not copy — try selecting the text manually.', 'error'));
-};
-
 window.editMeeting = function(id) {
   const m=STORE.meetings.find(m=>m.id===id); if(!m) return;
   document.getElementById('modal-meeting-title').textContent = 'Edit Meeting';
@@ -461,14 +354,17 @@ window.delMeeting = async function(id) {
   if(m) {
     // Delete the associated agenda-solicitation task and its calendar event
     await deleteMeetingTask(m.date);
-    // Delete meeting from all synced calendars (primary + named only)
+    // Delete meeting from all synced calendars
     const namedCals=(STORE.settings.signups&&STORE.settings.signups.namedCals)||[];
     if(m.gcalIds) {
       for(const [label, gcalId] of Object.entries(m.gcalIds)) {
         if(!gcalId) continue;
-        const calId = label==='Primary Calendar' ? CONFIG.CALENDAR_ID
+        const token = label==='UFL Calendar' ? _uflToken : _accessToken;
+        const calId = label==='UFL Calendar'
+          ? ((STORE.settings.uflCalendar&&STORE.settings.uflCalendar.calendarId)||'primary')
+          : label==='Primary Calendar' ? CONFIG.CALENDAR_ID
           : (namedCals.find(c=>c.nick===label)||{}).id||CONFIG.CALENDAR_ID;
-        await calDeleteOnTarget(calId, gcalId, _accessToken);
+        if(token) await calDeleteOnTarget(calId, gcalId, token);
       }
     } else if(m.gcalId) {
       await calDeleteEvent(m.gcalId);
@@ -1141,11 +1037,26 @@ function renderSettings() {
   document.getElementById('setting-meeting-name').value=STORE.settings.meetingName||'Comp/Theory Area Meeting';
   const mr=STORE.settings.meetingRecurrence;
   document.getElementById('setting-mr-enabled').value=mr.enabled?'1':'0';
-
+  // UFL Calendar settings
+  const uflCal = STORE.settings.uflCalendar || {};
+  const uflCalIdEl = document.getElementById('ufl-cal-id');
+  if (uflCalIdEl) uflCalIdEl.value = uflCal.calendarId || 'primary';
+  if (uflCal.email && uflCal.connected) {
+    const badge = document.getElementById('ufl-cal-badge');
+    if (badge) { badge.textContent = '✓ ' + uflCal.email; badge.style.color = 'var(--green)'; }
+    const btnC = document.getElementById('btn-connect-ufl');
+    const btnD = document.getElementById('btn-disconnect-ufl');
+    if (btnC) btnC.style.display = 'none';
+    if (btnD) btnD.style.display = 'inline-flex';
+  }
   // Meeting calendar targets
   const mc = STORE.settings.meetingCalendars || {};
   const primaryCk = document.getElementById('mtg-cal-primary');
+  const uflCk = document.getElementById('mtg-cal-ufl');
+  const inviteCk = document.getElementById('mtg-send-invites');
   if (primaryCk) primaryCk.checked = mc.primary !== false;
+  if (uflCk) uflCk.checked = !!mc.ufl;
+  if (inviteCk) inviteCk.checked = !!mc.sendInvites;
   // Named calendar checkboxes for meeting targets
   const namedCals = (STORE.settings.signups && STORE.settings.signups.namedCals) || [];
   const namedChecksEl = document.getElementById('mtg-named-cal-checks');
@@ -1239,24 +1150,12 @@ function setupEventHandlers() {
     const urg=document.getElementById('task-urg').value;
     const freq=document.getElementById('task-freq').value;
     const notes=document.getElementById('task-notes').value;
-    const emailTemplate=(document.getElementById('task-email-tpl')||{value:''}).value.trim();
     if(_editTaskId) {
       const t=STORE.tasks.find(t=>t.id===_editTaskId);
-      if(t){
-        const dueDateChanged=t.due!==due, titleChanged=t.title!==title;
-        Object.assign(t,{title,due,urg,freq,notes,emailTemplate:emailTemplate||t.emailTemplate||''});
-        // Sync to Google Calendar when title or due date changed
-        if(due && (dueDateChanged||titleChanged)) {
-          if(t.gcalId) await calDeleteEvent(t.gcalId);
-          t.gcalId = await calCreateReminder(title,due,notes,urg);
-        } else if(!due && t.gcalId) {
-          await calDeleteEvent(t.gcalId);
-          t.gcalId=null;
-        }
-      }
+      if(t){Object.assign(t,{title,due,urg,freq,notes});}
     } else {
       const gcalId=due?await calCreateReminder(title,due,notes,urg):null;
-      STORE.tasks.push({id:uid(),title,due,urg,freq,notes,emailTemplate:emailTemplate||'',done:false,gcalId});
+      STORE.tasks.push({id:uid(),title,due,urg,freq,notes,done:false,gcalId});
     }
     save(); closeModal('modal-task'); _editTaskId=null; renderTasks();
   });
@@ -1582,15 +1481,21 @@ function setupEventHandlers() {
     STORE.settings.academicYearEnd=parseInt(document.getElementById('setting-ay-end').value);
     save(); showToast('Academic year bounds saved.','success');
   });
-
+  // UFL Calendar ID save
+  const btnSaveUfl = document.getElementById('btn-save-ufl-cal');
+  if (btnSaveUfl) btnSaveUfl.addEventListener('click', () => {
+    if (!STORE.settings.uflCalendar) STORE.settings.uflCalendar = {};
+    STORE.settings.uflCalendar.calendarId = document.getElementById('ufl-cal-id').value.trim() || 'primary';
+    save(); showToast('UFL Calendar ID saved.', 'success');
+  });
   // Meeting calendar targets save
   const btnSaveMtgCals = document.getElementById('btn-save-mtg-cals');
   if (btnSaveMtgCals) btnSaveMtgCals.addEventListener('click', () => {
     if (!STORE.settings.meetingCalendars) STORE.settings.meetingCalendars = {};
     const mc = STORE.settings.meetingCalendars;
     mc.primary = document.getElementById('mtg-cal-primary').checked;
-    mc.ufl = false; // UFL uses Exchange — invitations handled via .ics file
-    mc.sendInvites = false;
+    mc.ufl = document.getElementById('mtg-cal-ufl').checked;
+    mc.sendInvites = document.getElementById('mtg-send-invites').checked;
     mc.named = [...document.querySelectorAll('.mtg-named-cal-ck:checked')].map(el => el.dataset.id);
     save(); showToast('Meeting calendar targets saved.', 'success');
   });
