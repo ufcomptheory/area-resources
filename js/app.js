@@ -331,10 +331,30 @@ window.syncMeetingToGcal = async function(id) {
   const gcalId = await calSyncEvent(m.gcalId||null, mtgName, m.date, m.time, m.timeEnd, m.notes||m.location, 'Meeting');
   if(gcalId){m.gcalId=gcalId; save(); renderMeetingsSchedule();}
 };
+// Find the agenda-solicitation task associated with a meeting date
+function findMeetingTask(meetingDate, meetingName) {
+  const name = meetingName || STORE.settings.meetingName || 'Comp/Theory Area Meeting';
+  return STORE.tasks.find(t =>
+    !t.done &&
+    t.freq === 'Once' &&
+    t.title && t.title.includes('Solicit agenda items') &&
+    t.title.includes(fmtDate(meetingDate))
+  );
+}
+
+async function deleteMeetingTask(meetingDate, meetingName) {
+  const task = findMeetingTask(meetingDate, meetingName);
+  if (!task) return;
+  if (task.gcalId) await calDeleteEvent(task.gcalId);
+  STORE.tasks = STORE.tasks.filter(t => t.id !== task.id);
+}
+
 window.delMeeting = async function(id) {
   const m=STORE.meetings.find(m=>m.id===id);
   if(m) {
-    // Delete from all synced calendars
+    // Delete the associated agenda-solicitation task and its calendar event
+    await deleteMeetingTask(m.date);
+    // Delete meeting from all synced calendars
     const namedCals=(STORE.settings.signups&&STORE.settings.signups.namedCals)||[];
     if(m.gcalIds) {
       for(const [label, gcalId] of Object.entries(m.gcalIds)) {
@@ -415,7 +435,11 @@ window.importMinutes=function(id,input){
 window.delMeetingArchive=function(id){
   if(!confirm('Delete this meeting record?')) return;
   const m=STORE.meetings.find(m=>m.id===id);
-  if(m&&m.gcalId) calDeleteEvent(m.gcalId);
+  if(m){
+    if(m.gcalId) calDeleteEvent(m.gcalId);
+    // Also clean up associated agenda task
+    deleteMeetingTask(m.date);
+  }
   STORE.meetings=STORE.meetings.filter(m=>m.id!==id);save();renderMeetingsArchive();
 };
 
@@ -1166,11 +1190,31 @@ function setupEventHandlers() {
     if(editId) {
       const m=STORE.meetings.find(m=>m.id===editId);
       if(!m) return;
+      const oldDate = m.date;
       m.date=date; m.time=time; m.timeEnd=timeEnd;
       m.location=location; m.remindDays=remindDays; m.notes=notes;
       const res=await calSyncMulti(m.gcalIds||{}, mtgName, date, time, timeEnd, notes||location, 'Meeting', targets);
       m.gcalIds={}; res.forEach(r=>{ if(r.gcalId) m.gcalIds[r.label]=r.gcalId; });
       m.gcalId=m.gcalIds['Primary Calendar']||null;
+      // If the date changed, update the agenda-solicitation task too
+      if(oldDate !== date) {
+        const task = findMeetingTask(oldDate, mtgName);
+        if(task) {
+          // Delete old calendar reminder
+          if(task.gcalId) await calDeleteEvent(task.gcalId);
+          // Compute new reminder date
+          const newRemDate=new Date(date+'T00:00:00');
+          newRemDate.setDate(newRemDate.getDate()-remindDays);
+          const newRemDateStr=newRemDate.toISOString().slice(0,10);
+          // Update task
+          task.title=`Solicit agenda items for ${mtgName} on `+fmtDate(date);
+          task.due=newRemDateStr;
+          task.gcalId=null;
+          // Re-sync to calendar
+          const newRemGcalId=await calCreateReminder(task.title, newRemDateStr,'','med');
+          task.gcalId=newRemGcalId;
+        }
+      }
       save(); closeModal('modal-meeting'); renderMeetings();
     } else {
       const res=await calCreateMulti(mtgName, date, time, timeEnd, notes||location, 'Meeting', targets);
