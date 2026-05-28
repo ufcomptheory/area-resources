@@ -7,7 +7,7 @@ const CONFIG = {
   // Your Google OAuth 2.0 Client ID
   // Get this from: https://console.cloud.google.com/
   // → APIs & Services → Credentials → Create OAuth 2.0 Client ID
-  GOOGLE_CLIENT_ID: '831478288151-hn4r257sbg1hnl7ieicblo4q6lk4u9t6.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '1088803013496-hbs9612huchprg6a5gi2vp4n4jsd2m13.apps.googleusercontent.com',
 
   // The name of the JSON file that stores your dashboard data in Google Drive
   DRIVE_FILE_NAME: 'uf_area_head_data.json',
