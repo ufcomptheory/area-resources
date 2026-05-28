@@ -333,7 +333,23 @@ window.syncMeetingToGcal = async function(id) {
 };
 window.delMeeting = async function(id) {
   const m=STORE.meetings.find(m=>m.id===id);
-  if(m&&m.gcalId) await calDeleteEvent(m.gcalId);
+  if(m) {
+    // Delete from all synced calendars
+    const namedCals=(STORE.settings.signups&&STORE.settings.signups.namedCals)||[];
+    if(m.gcalIds) {
+      for(const [label, gcalId] of Object.entries(m.gcalIds)) {
+        if(!gcalId) continue;
+        const token = label==='UFL Calendar' ? _uflToken : _accessToken;
+        const calId = label==='UFL Calendar'
+          ? ((STORE.settings.uflCalendar&&STORE.settings.uflCalendar.calendarId)||'primary')
+          : label==='Primary Calendar' ? CONFIG.CALENDAR_ID
+          : (namedCals.find(c=>c.nick===label)||{}).id||CONFIG.CALENDAR_ID;
+        if(token) await calDeleteOnTarget(calId, gcalId, token);
+      }
+    } else if(m.gcalId) {
+      await calDeleteEvent(m.gcalId);
+    }
+  }
   STORE.meetings=STORE.meetings.filter(m=>m.id!==id); save(); renderMeetingsSchedule();
 };
 function renderAgendaItems() {
@@ -997,6 +1013,38 @@ function renderSettings() {
   document.getElementById('setting-meeting-name').value=STORE.settings.meetingName||'Comp/Theory Area Meeting';
   const mr=STORE.settings.meetingRecurrence;
   document.getElementById('setting-mr-enabled').value=mr.enabled?'1':'0';
+  // UFL Calendar settings
+  const uflCal = STORE.settings.uflCalendar || {};
+  const uflCalIdEl = document.getElementById('ufl-cal-id');
+  if (uflCalIdEl) uflCalIdEl.value = uflCal.calendarId || 'primary';
+  if (uflCal.email && uflCal.connected) {
+    const badge = document.getElementById('ufl-cal-badge');
+    if (badge) { badge.textContent = '✓ ' + uflCal.email; badge.style.color = 'var(--green)'; }
+    const btnC = document.getElementById('btn-connect-ufl');
+    const btnD = document.getElementById('btn-disconnect-ufl');
+    if (btnC) btnC.style.display = 'none';
+    if (btnD) btnD.style.display = 'inline-flex';
+  }
+  // Meeting calendar targets
+  const mc = STORE.settings.meetingCalendars || {};
+  const primaryCk = document.getElementById('mtg-cal-primary');
+  const uflCk = document.getElementById('mtg-cal-ufl');
+  const inviteCk = document.getElementById('mtg-send-invites');
+  if (primaryCk) primaryCk.checked = mc.primary !== false;
+  if (uflCk) uflCk.checked = !!mc.ufl;
+  if (inviteCk) inviteCk.checked = !!mc.sendInvites;
+  // Named calendar checkboxes for meeting targets
+  const namedCals = (STORE.settings.signups && STORE.settings.signups.namedCals) || [];
+  const namedChecksEl = document.getElementById('mtg-named-cal-checks');
+  if (namedChecksEl && namedCals.length) {
+    namedChecksEl.innerHTML = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);margin-bottom:8px">Named Calendars</div>' +
+      namedCals.map(c => `<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" class="mtg-named-cal-ck" data-id="${c.id}" ${(mc.named||[]).includes(c.id)?'checked':''} style="width:16px;height:16px;accent-color:var(--navy)">
+        <div><strong>${c.nick}</strong></div>
+      </label>`).join('');
+  }
+  // Faculty invite list
+  renderFacultyInviteList();
   document.getElementById('setting-mr-dow').value=mr.dayOfWeek;
   document.getElementById('setting-mr-occ').value=mr.weekOccurrence;
   document.getElementById('setting-mr-time').value=mr.time||'';
@@ -1014,6 +1062,23 @@ function renderDegreesList() {
     </div>`).join('');
 }
 window.removeDegree=function(i){STORE.degrees.splice(i,1);save();renderDegreesList();};
+
+function renderFacultyInviteList() {
+  const el = document.getElementById('faculty-invite-list');
+  if (!el) return;
+  const list = STORE.settings.facultyInviteList || [];
+  if (!list.length) { el.innerHTML = '<div class="text-muted mb-8">No emails added yet.</div>'; return; }
+  el.innerHTML = list.map((item, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--gray-100);border-radius:6px;margin-bottom:6px">
+      <div style="flex:1;font-size:13px">${item.name ? `<strong>${item.name}</strong> · ` : ''}<span style="font-family:'Source Code Pro',monospace;font-size:12px">${item.email}</span></div>
+      <button class="btn btn-danger btn-xs" onclick="removeInviteEmail(${i})">✕</button>
+    </div>`).join('');
+}
+window.removeInviteEmail = function(i) {
+  if (!STORE.settings.facultyInviteList) return;
+  STORE.settings.facultyInviteList.splice(i, 1);
+  save(); renderFacultyInviteList();
+};
 
 // ═══════════════════════════════════
 // SETTINGS POPULATION
@@ -1096,29 +1161,27 @@ function setupEventHandlers() {
     const notes=document.getElementById('mtg-notes').value;
     const mtgName=STORE.settings.meetingName||'Comp/Theory Area Meeting';
     const editId=document.getElementById('mtg-edit-id').value;
+    const targets=buildMeetingTargets();
 
     if(editId) {
-      // ── UPDATE existing meeting ──
       const m=STORE.meetings.find(m=>m.id===editId);
       if(!m) return;
       m.date=date; m.time=time; m.timeEnd=timeEnd;
       m.location=location; m.remindDays=remindDays; m.notes=notes;
-      // Sync update to Google Calendar (PATCH if synced, create if not)
-      const newGcalId=await calSyncEvent(m.gcalId||null, mtgName, date, time, timeEnd, notes||location, 'Meeting');
-      if(newGcalId) m.gcalId=newGcalId;
-      save(); closeModal('modal-meeting');
-      renderMeetings();
+      const res=await calSyncMulti(m.gcalIds||{}, mtgName, date, time, timeEnd, notes||location, 'Meeting', targets);
+      m.gcalIds={}; res.forEach(r=>{ if(r.gcalId) m.gcalIds[r.label]=r.gcalId; });
+      m.gcalId=m.gcalIds['Primary Calendar']||null;
+      save(); closeModal('modal-meeting'); renderMeetings();
     } else {
-      // ── CREATE new meeting ──
-      const gcalId=await calSyncEvent(null, mtgName, date, time, timeEnd, notes||location, 'Meeting');
-      STORE.meetings.push({id:uid(),date,time,timeEnd,location,remindDays,notes,gcalId,generated:false,minutes:''});
-      // Auto-create agenda solicitation task
+      const res=await calCreateMulti(mtgName, date, time, timeEnd, notes||location, 'Meeting', targets);
+      const gcalIds={}; res.forEach(r=>{ if(r.gcalId) gcalIds[r.label]=r.gcalId; });
+      STORE.meetings.push({id:uid(),date,time,timeEnd,location,remindDays,notes,
+        gcalId:gcalIds['Primary Calendar']||null, gcalIds, generated:false, minutes:''});
       const remDate=new Date(date+'T00:00:00'); remDate.setDate(remDate.getDate()-remindDays);
       const remDateStr=remDate.toISOString().slice(0,10);
       const remGcalId=await calCreateReminder(`Solicit agenda items for ${mtgName} on `+fmtDate(date),remDateStr,'','med');
       STORE.tasks.push({id:uid(),title:`Solicit agenda items for ${mtgName} on `+fmtDate(date),due:remDateStr,urg:'med',freq:'Once',notes:'',done:false,gcalId:remGcalId});
-      save(); closeModal('modal-meeting');
-      renderMeetings(); renderTasks();
+      save(); closeModal('modal-meeting'); renderMeetings(); renderTasks();
     }
   });
   document.getElementById('btn-generate-meetings').addEventListener('click',async()=>{
@@ -1373,6 +1436,57 @@ function setupEventHandlers() {
     STORE.settings.academicYearStart=parseInt(document.getElementById('setting-ay-start').value);
     STORE.settings.academicYearEnd=parseInt(document.getElementById('setting-ay-end').value);
     save(); showToast('Academic year bounds saved.','success');
+  });
+  // UFL Calendar ID save
+  const btnSaveUfl = document.getElementById('btn-save-ufl-cal');
+  if (btnSaveUfl) btnSaveUfl.addEventListener('click', () => {
+    if (!STORE.settings.uflCalendar) STORE.settings.uflCalendar = {};
+    STORE.settings.uflCalendar.calendarId = document.getElementById('ufl-cal-id').value.trim() || 'primary';
+    save(); showToast('UFL Calendar ID saved.', 'success');
+  });
+  // Meeting calendar targets save
+  const btnSaveMtgCals = document.getElementById('btn-save-mtg-cals');
+  if (btnSaveMtgCals) btnSaveMtgCals.addEventListener('click', () => {
+    if (!STORE.settings.meetingCalendars) STORE.settings.meetingCalendars = {};
+    const mc = STORE.settings.meetingCalendars;
+    mc.primary = document.getElementById('mtg-cal-primary').checked;
+    mc.ufl = document.getElementById('mtg-cal-ufl').checked;
+    mc.sendInvites = document.getElementById('mtg-send-invites').checked;
+    mc.named = [...document.querySelectorAll('.mtg-named-cal-ck:checked')].map(el => el.dataset.id);
+    save(); showToast('Meeting calendar targets saved.', 'success');
+  });
+  // Faculty invite list
+  const btnAddInvite = document.getElementById('btn-add-invite');
+  if (btnAddInvite) btnAddInvite.addEventListener('click', () => {
+    const email = document.getElementById('new-invite-email').value.trim();
+    const name  = document.getElementById('new-invite-name').value.trim();
+    if (!email || !email.includes('@')) { showToast('Valid email required.', 'error'); return; }
+    if (!STORE.settings.facultyInviteList) STORE.settings.facultyInviteList = [];
+    if (STORE.settings.facultyInviteList.find(e => e.email === email)) { showToast('Already in list.', 'info'); return; }
+    STORE.settings.facultyInviteList.push({ email, name });
+    document.getElementById('new-invite-email').value = '';
+    document.getElementById('new-invite-name').value = '';
+    save(); renderFacultyInviteList();
+  });
+  const btnPullFaculty = document.getElementById('btn-pull-faculty-emails');
+  if (btnPullFaculty) btnPullFaculty.addEventListener('click', () => {
+    if (!STORE.settings.facultyInviteList) STORE.settings.facultyInviteList = [];
+    // Pull email addresses from faculty records (stored in notes or a dedicated field)
+    // Since faculty records don't have a dedicated email field yet, check notes for @ signs
+    let added = 0;
+    STORE.people.filter(p => p.type==='faculty' && p.active!==false).forEach(f => {
+      // Check if email-like string in notes
+      const emailMatch = (f.notes||'').match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+      if (emailMatch) {
+        const email = emailMatch[0];
+        if (!STORE.settings.facultyInviteList.find(e => e.email === email)) {
+          STORE.settings.facultyInviteList.push({ email, name: f.name });
+          added++;
+        }
+      }
+    });
+    save(); renderFacultyInviteList();
+    showToast(added ? `Added ${added} email${added!==1?'s':''} from faculty roster.` : 'No new emails found. Add email addresses to faculty notes fields first.', 'info');
   });
   document.getElementById('btn-save-meeting-name').addEventListener('click',()=>{
     STORE.settings.meetingName=document.getElementById('setting-meeting-name').value.trim()||'Comp/Theory Area Meeting';
