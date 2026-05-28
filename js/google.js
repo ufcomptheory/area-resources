@@ -2,11 +2,7 @@
 // GOOGLE INTEGRATION
 // ═══════════════════════════════════════════════════════
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/calendar.events',
-  'profile', 'email'
-].join(' ');
+const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
 
 let _accessToken = null;
 let _driveFileId = null;
