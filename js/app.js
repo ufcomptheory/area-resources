@@ -277,6 +277,7 @@ window.delTask = async function(id) {
 };
 window.syncTaskToGcal = async function(id) {
   const t=STORE.tasks.find(t=>t.id===id); if(!t||!t.due) return;
+  if(t.gcalId) await calDeleteEvent(t.gcalId);
   const gcalId = await calCreateReminder(t.title, t.due, t.notes, t.urg||'med');
   if(gcalId){t.gcalId=gcalId; save(); renderTasks();}
 };
@@ -1150,12 +1151,24 @@ function setupEventHandlers() {
     const urg=document.getElementById('task-urg').value;
     const freq=document.getElementById('task-freq').value;
     const notes=document.getElementById('task-notes').value;
+    const emailTemplate=(document.getElementById('task-email-tpl')||{value:''}).value.trim();
     if(_editTaskId) {
       const t=STORE.tasks.find(t=>t.id===_editTaskId);
-      if(t){Object.assign(t,{title,due,urg,freq,notes});}
+      if(t){
+        const dueDateChanged=t.due!==due, titleChanged=t.title!==title;
+        Object.assign(t,{title,due,urg,freq,notes,emailTemplate:emailTemplate||t.emailTemplate||''});
+        // Sync to Google Calendar when title or due date changed
+        if(due && (dueDateChanged||titleChanged)) {
+          if(t.gcalId) await calDeleteEvent(t.gcalId);
+          t.gcalId = await calCreateReminder(title,due,notes,urg);
+        } else if(!due && t.gcalId) {
+          await calDeleteEvent(t.gcalId);
+          t.gcalId=null;
+        }
+      }
     } else {
       const gcalId=due?await calCreateReminder(title,due,notes,urg):null;
-      STORE.tasks.push({id:uid(),title,due,urg,freq,notes,done:false,gcalId});
+      STORE.tasks.push({id:uid(),title,due,urg,freq,notes,emailTemplate:emailTemplate||'',done:false,gcalId});
     }
     save(); closeModal('modal-task'); _editTaskId=null; renderTasks();
   });

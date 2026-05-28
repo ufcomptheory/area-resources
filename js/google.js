@@ -10,7 +10,10 @@ const SCOPES = [
   'profile', 'email'
 ].join(' ');
 
-const SCOPES_CAL_ONLY = 'https://www.googleapis.com/auth/calendar.events';
+const SCOPES_CAL_ONLY = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'email', 'profile'
+].join(' ');
 
 let _accessToken  = null;   // primary account
 let _uflToken     = null;   // UFL account (calendar only)
@@ -72,7 +75,7 @@ window.googleSignOut = function() {
   showToast('Signed out.', 'info');
 };
 
-// ── UFL secondary account — Calendar only ──
+// ── UFL secondary account — Calendar + identity ──
 window.connectUFLCalendar = function() {
   const client = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.GOOGLE_CLIENT_ID,
@@ -81,13 +84,17 @@ window.connectUFLCalendar = function() {
       if (resp.error) { showToast('UFL sign-in failed: ' + resp.error, 'error'); return; }
       _uflToken = resp.access_token;
       // Verify which account this is
+      let email = '';
       try {
         const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { 'Authorization': 'Bearer ' + _uflToken }
         }).then(r => r.json());
-        showToast('✅ Connected UFL Calendar: ' + info.email, 'success');
-        updateUFLStatus(info.email, true);
-      } catch(e) { showToast('Connected but could not verify account.', 'info'); }
+        email = info.email || info.name || 'UFL Account';
+      } catch(e) {
+        email = 'UFL Account'; // fallback if userinfo fails
+      }
+      showToast('✅ Connected: ' + email, 'success');
+      updateUFLStatus(email, true);
     }
   });
   // Force account chooser so user can pick their UFL account
@@ -272,16 +279,22 @@ async function calCreateOnTarget(calendarId, token, body) {
 }
 
 // Update event on a specific calendar with a specific token
+// Returns true on success, false if event not found or update failed
 async function calUpdateOnTarget(calendarId, eventId, token, body) {
-  const resp = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
-    {
-      method: 'PATCH',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }
-  );
-  return resp.ok;
+  try {
+    const resp = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }
+    );
+    if (resp.status === 404) return false; // event was deleted from GCal
+    return resp.ok;
+  } catch(e) {
+    return false;
+  }
 }
 
 // Delete event on a specific calendar with a specific token
@@ -321,18 +334,25 @@ async function calCreateMulti(title, dateStr, timeStr, endTimeStr, description, 
 async function calSyncMulti(existingIds, title, dateStr, timeStr, endTimeStr, description, category, targets) {
   // existingIds: { [label]: gcalId }
   const results = [];
-  const body = buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
   for (const t of targets) {
     const existing = existingIds && existingIds[t.label];
+    const tBody = t.attendees && t.attendees.length
+      ? buildCalBody(title, dateStr, timeStr, endTimeStr, description, category, t.attendees)
+      : buildCalBody(title, dateStr, timeStr, endTimeStr, description, category);
+
     if (existing) {
-      const ok = await calUpdateOnTarget(t.calendarId, existing, t.token, body);
-      if (ok) { results.push({ label: t.label, gcalId: existing }); showToast(`✅ Updated ${t.label}`, 'success'); continue; }
+      const ok = await calUpdateOnTarget(t.calendarId, existing, t.token, tBody);
+      if (ok) {
+        results.push({ label: t.label, gcalId: existing });
+        showToast(`✅ Updated ${t.label}`, 'success');
+        continue;
+      }
+      // PATCH failed (event was deleted externally) — delete the stale ID and recreate
+      await calDeleteOnTarget(t.calendarId, existing, t.token).catch(()=>{});
     }
-    // Create fresh
+
+    // Create fresh (either no existing ID, or PATCH failed)
     try {
-      const tBody = t.attendees && t.attendees.length
-        ? buildCalBody(title, dateStr, timeStr, endTimeStr, description, category, t.attendees)
-        : body;
       const id = await calCreateOnTarget(t.calendarId, t.token, tBody);
       results.push({ label: t.label, gcalId: id });
       showToast(`✅ Added to ${t.label}`, 'success');
@@ -397,10 +417,14 @@ function buildMeetingTargets(meetingSettings) {
   }
 
   // UFL calendar
-  if (ms.ufl && _uflToken) {
-    const uflCalId = (STORE.settings.uflCalendar && STORE.settings.uflCalendar.calendarId) || 'primary';
-    const attendees = ms.sendInvites ? getFacultyAttendees() : [];
-    targets.push({ calendarId: uflCalId, token: _uflToken, label: 'UFL Calendar', attendees });
+  if (ms.ufl) {
+    if (_uflToken) {
+      const uflCalId = (STORE.settings.uflCalendar && STORE.settings.uflCalendar.calendarId) || 'primary';
+      const attendees = ms.sendInvites ? getFacultyAttendees() : [];
+      targets.push({ calendarId: uflCalId, token: _uflToken, label: 'UFL Calendar', attendees });
+    } else {
+      showToast('⚠ UFL Calendar selected but not connected — go to Settings to connect.', 'error');
+    }
   }
 
   // Named calendars
