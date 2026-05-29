@@ -111,14 +111,20 @@ async function driveGetFileId() {
 async function driveLoad() {
   try {
     const fileId = await driveGetFileId();
-    if (!fileId) { load(); seedDefaults(); await driveSaveNow(); return; }
+    if (!fileId) {
+      // No existing file — first time setup
+      load(); seedDefaults();
+      await driveSaveNow();
+      showToast('Welcome — new data file created in Google Drive.', 'success');
+      return;
+    }
     const text = await gFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
     const data = typeof text === 'string' ? JSON.parse(text) : text;
     Object.assign(STORE, data);
     ensureStoreArrays();
     showToast('Data loaded from Google Drive', 'success');
   } catch(e) {
-    showToast('Could not load from Drive — using local data.', 'error');
+    showToast('Could not load from Drive — using local data. (' + e.message + ')', 'error');
     load(); seedDefaults();
   }
 }
