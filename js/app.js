@@ -60,9 +60,16 @@ function renderPage(page) {
 // ── Modals ──
 function setupModals() {
   window.closeModal = id => document.getElementById(id).classList.remove('open');
-  window.openModal = id => document.getElementById(id).classList.add('open');
+  window.openModal  = id => document.getElementById(id).classList.add('open');
+  // Only close modal when BOTH mousedown and mouseup occur on the overlay itself.
+  // This prevents the modal closing when user clicks inside and drags outside.
   document.querySelectorAll('.modal-overlay').forEach(m => {
-    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+    let _downOnOverlay = false;
+    m.addEventListener('mousedown', e => { _downOnOverlay = (e.target === m); });
+    m.addEventListener('mouseup',   e => {
+      if (_downOnOverlay && e.target === m) m.classList.remove('open');
+      _downOnOverlay = false;
+    });
   });
 }
 function setupCalendarNav() {
@@ -1727,7 +1734,17 @@ function setupEventHandlers() {
         time: '3:00 PM', timeEnd: '4:00 PM',
         location: '', agendaReminderDays: 7,
       },
+      meetingCalendars: { primary: true, named: [] },
+      facultyInviteList: [],
+      gtaDuties: null,
       currentAdmCycle: '',
+      signups: {
+        appsScriptUrl: '', adminKey: '', publicUrl: '',
+        remindDays1: 7, remindDays2: 1,
+        namedCals: [], cachedSessions: []
+      },
+      submissions: {},
+      archive: {},
     };
     STORE._seeded = false;
     localStorage.removeItem('uf_area_head_v3');

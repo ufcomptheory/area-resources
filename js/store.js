@@ -60,19 +60,27 @@ function load() {
 }
 
 function ensureStoreArrays() {
+  // Core arrays
   ['people','gtaAssignments','studioAssignments','presentations',
    'rotationScenarios','tasks','events','meetings','agendaItems',
    'admCycles','applicants','degrees'].forEach(k => {
     if (!Array.isArray(STORE[k])) STORE[k] = [];
   });
+  // Rotation data
+  if (!Array.isArray(STORE.rot2627)) STORE.rot2627 = [];
+  if (!Array.isArray(STORE.rot2728)) STORE.rot2728 = [];
+  // Settings object
   if (!STORE.settings) STORE.settings = {};
-  if (!STORE.settings.meetingRecurrence) STORE.settings.meetingRecurrence = {};
-  // defaults
   const ds = STORE.settings;
+  // Core settings defaults
   if (!ds.currentSemester) ds.currentSemester = 'Fall 2026';
   if (!ds.academicYearStart) ds.academicYearStart = 8;
   if (!ds.academicYearEnd) ds.academicYearEnd = 4;
   if (!ds.currentAdmCycle) ds.currentAdmCycle = '';
+  if (!ds.meetingName) ds.meetingName = 'Comp/Theory Area Meeting';
+  if (!Array.isArray(ds.degrees)) ds.degrees = ['Minor','BA','BM','MM','DMA','PhD'];
+  // Meeting recurrence
+  if (!ds.meetingRecurrence) ds.meetingRecurrence = {};
   const mr = ds.meetingRecurrence;
   if (mr.enabled === undefined) mr.enabled = true;
   if (!mr.dayOfWeek && mr.dayOfWeek !== 0) mr.dayOfWeek = 5;
@@ -81,6 +89,26 @@ function ensureStoreArrays() {
   if (!mr.timeEnd) mr.timeEnd = '4:00 PM';
   if (!mr.location) mr.location = '';
   if (!mr.agendaReminderDays) mr.agendaReminderDays = 7;
+  // Meeting calendar targets
+  if (!ds.meetingCalendars) ds.meetingCalendars = { primary: true, named: [] };
+  if (!Array.isArray(ds.meetingCalendars.named)) ds.meetingCalendars.named = [];
+  // Faculty invite list
+  if (!Array.isArray(ds.facultyInviteList)) ds.facultyInviteList = [];
+  // GTA duties
+  if (!Array.isArray(ds.gtaDuties)) ds.gtaDuties = null; // null = use defaults
+  // Sign-up sheets settings
+  if (!ds.signups) ds.signups = {};
+  if (!ds.signups.appsScriptUrl) ds.signups.appsScriptUrl = '';
+  if (!ds.signups.adminKey) ds.signups.adminKey = '';
+  if (!ds.signups.publicUrl) ds.signups.publicUrl = '';
+  if (!ds.signups.remindDays1) ds.signups.remindDays1 = 7;
+  if (!ds.signups.remindDays2) ds.signups.remindDays2 = 1;
+  if (!Array.isArray(ds.signups.namedCals)) ds.signups.namedCals = [];
+  if (!Array.isArray(ds.signups.cachedSessions)) ds.signups.cachedSessions = [];
+  // Event submissions settings
+  if (!ds.submissions) ds.submissions = {};
+  // Calendar archive settings
+  if (!ds.archive) ds.archive = {};
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
