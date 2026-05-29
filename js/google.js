@@ -46,6 +46,24 @@ function tryAutoSignIn() {
   }).requestAccessToken({ prompt: '' });
 }
 
+// ── Silently refresh the access token (called before API calls if token may be stale) ──
+let _tokenClient = null;
+function ensureFreshToken() {
+  return new Promise((resolve) => {
+    if (!_tokenClient) {
+      _tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CONFIG.GOOGLE_CLIENT_ID,
+        scope: SCOPES,
+        callback: (resp) => {
+          if (resp.access_token) { _accessToken = resp.access_token; }
+          resolve();
+        }
+      });
+    }
+    _tokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+
 window.googleSignIn = function() {
   const client = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.GOOGLE_CLIENT_ID,
@@ -92,8 +110,16 @@ async function onSignedIn() {
 // ═══════════════════════════════════════
 
 async function gFetch(url, options = {}) {
-  const headers = { 'Authorization': 'Bearer ' + _accessToken, ...(options.headers || {}) };
-  const resp = await fetch(url, { ...options, headers });
+  const makeRequest = async (tok) => {
+    const headers = { 'Authorization': 'Bearer ' + tok, ...(options.headers || {}) };
+    return fetch(url, { ...options, headers });
+  };
+  let resp = await makeRequest(_accessToken);
+  // Retry once with fresh token on 401
+  if (resp.status === 401) {
+    await ensureFreshToken();
+    resp = await makeRequest(_accessToken);
+  }
   if (!resp.ok) { const err = await resp.text(); throw new Error(`Google API ${resp.status}: ${err}`); }
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
@@ -201,21 +227,32 @@ function buildCalBody(title, dateStr, timeStr, endTimeStr, description, category
 }
 
 async function calCreateOnTarget(calendarId, token, body) {
-  const resp = await fetch(
+  const makeRequest = async (tok) => fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
-    { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    { method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
   );
+  let resp = await makeRequest(token);
+  // If 401, refresh token and retry once
+  if (resp.status === 401 && token === _accessToken) {
+    await ensureFreshToken();
+    resp = await makeRequest(_accessToken);
+  }
   if (!resp.ok) { const err = await resp.text(); throw new Error(resp.status + ': ' + err); }
   return (await resp.json()).id;
 }
 
 // Returns true on success, false if not found (404) or failed
 async function calUpdateOnTarget(calendarId, eventId, token, body) {
+  const makeRequest = async (tok) => fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
+    { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
   try {
-    const resp = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
-      { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    let resp = await makeRequest(token);
+    if (resp.status === 401 && token === _accessToken) {
+      await ensureFreshToken();
+      resp = await makeRequest(_accessToken);
+    }
     if (resp.status === 404) return false;
     return resp.ok;
   } catch(e) { return false; }
