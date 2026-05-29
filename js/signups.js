@@ -106,6 +106,43 @@ function getBlockDates(block) {
 }
 
 // ── Render sign-up sheets page ──
+
+// Returns true if this named calendar should use the dashboard's primary OAuth token
+// rather than the Apps Script
+function isCalPrimary(calId) {
+  const cals = (STORE.settings.signups || {}).namedCals || [];
+  const cal = cals.find(c => c.id === calId);
+  return cal && cal.account === 'primary';
+}
+
+// Create a simple blocked-off event on a primary account calendar via Google Calendar API
+async function seedCalendarViaDashboard(sheetId, calendarId) {
+  const url = (STORE.settings.signups || {}).appsScriptUrl;
+  if (!url) return { created: [], errors: [] };
+  // Get slots from Apps Script
+  const resp = await fetch(url + '?action=getSheet&sheetId=' + encodeURIComponent(sheetId));
+  if (!resp.ok) throw new Error('Could not load sheet slots');
+  const data = await resp.json();
+  const slots = data.slots || [];
+  // Group by unique session date + find session start/end
+  const sessions = {};
+  slots.forEach(s => {
+    if (!sessions[s.date]) sessions[s.date] = { startTime: s.startTime, endTime: s.endTime, title: data.title };
+    else {
+      // Extend end time if needed
+      if (s.endTime > sessions[s.date].endTime) sessions[s.date].endTime = s.endTime;
+    }
+  });
+  const created = [], errors = [];
+  for (const [date, sess] of Object.entries(sessions)) {
+    try {
+      const gcalId = await calCreateEvent(sess.title, date, sess.startTime, sess.endTime, '', 'Sign-Up');
+      if (gcalId) created.push(date);
+    } catch(e) { errors.push(date + ': ' + e.message); }
+  }
+  return { created, errors };
+}
+
 window.renderSignups = function() {
   loadSuSettings();
   renderSuSheetsList();
@@ -131,14 +168,19 @@ function renderNamedCalsList() {
     el.innerHTML = '<div class="text-muted mb-8">No calendars saved yet.</div>';
     return;
   }
-  el.innerHTML = cals.map((c, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--gray-100);border-radius:6px;margin-bottom:6px">
+  el.innerHTML = cals.map((c, i) => {
+    const acctBadge = c.account==='primary'
+      ? '<span class="pill pill-blue" style="font-size:10px">scottleemusic.net</span>'
+      : '<span class="pill pill-gold" style="font-size:10px">ufcomposers</span>';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--gray-100);border-radius:6px;margin-bottom:6px">
       <div style="flex:1">
         <span style="font-weight:600;font-size:13px">${esc(c.nick)}</span>
-        <span class="text-muted" style="margin-left:10px;font-size:12px;font-family:'Source Code Pro',monospace">${esc(c.id)}</span>
+        <span class="text-muted" style="margin-left:8px;font-size:12px;font-family:'Source Code Pro',monospace">${esc(c.id)}</span>
+        <span style="margin-left:8px">${acctBadge}</span>
       </div>
       <button class="btn btn-danger btn-xs" onclick="delNamedCal(${i})">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function populateCalDropdown() {
@@ -241,14 +283,28 @@ window.copySuLink = function(url) {
 window.seedSuCalendar = async function(sheetId) {
   const url = (STORE.settings.signups||{}).appsScriptUrl;
   if (!url) { showToast('Apps Script URL not configured.','error'); return; }
+  // Find which calendar this sheet uses
+  const sheetsData = _suSheets.find(s=>s.id===sheetId);
+  const calendarId = sheetsData ? (sheetsData.calendarId||'primary') : 'primary';
   showToast('Syncing calendar events…','info');
   try {
-    const result = await asGet(url, 'seedCalendar', { sheetId });
-    if (result.skipped) { showToast('Calendar sync is not enabled for this sheet.','info'); return; }
-    if (result.errors && result.errors.length) {
-      showToast('Created ' + result.created.length + ' event(s). Errors: ' + result.errors.join('; '),'info');
+    if (isCalPrimary(calendarId)) {
+      // Route through dashboard Google Calendar API
+      const result = await seedCalendarViaDashboard(sheetId, calendarId);
+      if (result.errors && result.errors.length) {
+        showToast('Created ' + result.created.length + ' event(s). Errors: ' + result.errors.join('; '),'info');
+      } else {
+        showToast('✅ ' + result.created.length + ' calendar event(s) created on primary calendar.','success');
+      }
     } else {
-      showToast('✅ ' + (result.created||[]).length + ' calendar event(s) created or updated.','success');
+      // Route through Apps Script (ufcomposers calendars)
+      const result = await asGet(url, 'seedCalendar', { sheetId });
+      if (result.skipped) { showToast('Calendar sync is not enabled for this sheet.','info'); return; }
+      if (result.errors && result.errors.length) {
+        showToast('Created ' + result.created.length + ' event(s). Errors: ' + result.errors.join('; '),'info');
+      } else {
+        showToast('✅ ' + (result.created||[]).length + ' calendar event(s) created or updated.','success');
+      }
     }
   } catch(e) { showToast('Calendar sync failed: '+e.message,'error'); }
 };
@@ -515,11 +571,19 @@ window.publishSuSheet = async function() {
     // (split to avoid Apps Script 30-second timeout)
     if (syncCalendar) {
       try {
-        const calResult = await asGet(settings.appsScriptUrl, 'seedCalendar', { sheetId });
+        let calResult;
+        if (isCalPrimary(calendarId)) {
+          // Primary account calendar — use dashboard Google Calendar API
+          calResult = await seedCalendarViaDashboard(sheetId, calendarId);
+        } else {
+          // Apps Script calendar (ufcomposers)
+          calResult = await asGet(settings.appsScriptUrl, 'seedCalendar', { sheetId });
+        }
         if (calResult.errors && calResult.errors.length) {
           showToast('Calendar: ' + calResult.created.length + ' events created. Errors: ' + calResult.errors.join('; '), 'info');
-        } else if (calResult.created) {
-          showToast('✅ ' + calResult.created.length + ' calendar event' + (calResult.created.length !== 1 ? 's' : '') + ' created on "' + calNick + '".', 'success');
+        } else {
+          const n = (calResult.created||[]).length;
+          showToast('✅ ' + n + ' calendar event' + (n !== 1 ? 's' : '') + ' created on "' + calNick + '".', 'success');
         }
       } catch(calErr) {
         showToast('Sheet published but calendar sync failed: ' + calErr.message + '. Try re-seeding from the Sheets tab.', 'info');
@@ -613,7 +677,8 @@ function setupSignupHandlers() {
     if (STORE.settings.signups.namedCals.find(c => c.id === id)) {
       showToast('That Calendar ID is already saved.','error'); return;
     }
-    STORE.settings.signups.namedCals.push({ nick, id });
+    const account = document.getElementById('su-cal-account').value || 'appsscript';
+    STORE.settings.signups.namedCals.push({ nick, id, account });
     document.getElementById('su-cal-nick').value = '';
     document.getElementById('su-cal-id-input').value = '';
     save();
