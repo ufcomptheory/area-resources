@@ -25,7 +25,7 @@ function doGet(e) {
     if (action === 'getArchivedEvents') return jsonResponse(getArchivedEvents(e.parameter.semester ? {semester:e.parameter.semester} : {}));
     if (['claim','cancel','createSheet','deleteSheet','seedCalendar',
          'submitEvent','updateSubmission','approveSubmission','rejectSubmission',
-         'archiveCustomPeriod','getArchiveExportHtml'].includes(action)) {
+         'archiveCustomPeriod','getArchiveExportHtml','storePrimaryGcalIds'].includes(action)) {
       const data = JSON.parse(decodeURIComponent(e.parameter.payload || '{}'));
       data.action = action;
       if (action === 'claim')               return jsonResponse(claimSlot(data));
@@ -39,6 +39,7 @@ function doGet(e) {
       if (action === 'rejectSubmission')    return jsonResponse(rejectSubmission(data));
       if (action === 'archiveCustomPeriod') return jsonResponse(archiveCustomPeriod(data));
       if (action === 'getArchiveExportHtml')return jsonResponse(getArchiveExportHtml(data));
+      if (action === 'storePrimaryGcalIds') return jsonResponse(storePrimaryGcalIds(data));
     }
     return jsonResponse({ error: 'Unknown action: ' + action });
   } catch(err) { return jsonResponse({ error: err.message }); }
@@ -73,10 +74,27 @@ function listSheets() {
       id: String(rows[i][0]), title: rows[i][1],
       subtitle: rows[i][2], createdAt: rows[i][3],
       syncCalendar: rows[i][4] === 'true' || rows[i][4] === true,
-      calendarId: String(rows[i][5]||'primary')
+      calendarId: String(rows[i][5]||'primary'),
+      primaryGcalIds: rows[i][6] ? JSON.parse(String(rows[i][6])) : {}
     });
   }
   return { sheets };
+}
+
+// Store primary account gcalIds (date→gcalId map) back to master sheet
+function storePrimaryGcalIds(data) {
+  const { sheetId, ids } = data;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const master = ss.getSheetByName(MASTER_SHEET_NAME);
+  if (!master) throw new Error('Master sheet not found');
+  const rows = master.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(sheetId)) {
+      master.getRange(i+1, 7).setValue(JSON.stringify(ids));
+      return { ok: true };
+    }
+  }
+  throw new Error('Sheet not found in master');
 }
 
 // ── Get a sheet with all slots ──
@@ -84,12 +102,13 @@ function getSheet(sheetId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const master = ss.getSheetByName(MASTER_SHEET_NAME);
   const masterRows = master ? master.getDataRange().getValues() : [];
-  let meta = { title: 'Sign-Up Sheet', subtitle: '', syncCalendar: false, calendarId: 'primary' };
+  let meta = { title: 'Sign-Up Sheet', subtitle: '', syncCalendar: false, calendarId: 'primary', primaryGcalIds: {} };
   for (let i = 1; i < masterRows.length; i++) {
     if (String(masterRows[i][0]) === String(sheetId)) {
       meta = { title: masterRows[i][1], subtitle: masterRows[i][2],
                syncCalendar: masterRows[i][4]==='true'||masterRows[i][4]===true,
-               calendarId: String(masterRows[i][5]||'primary') };
+               calendarId: String(masterRows[i][5]||'primary'),
+               primaryGcalIds: masterRows[i][6] ? JSON.parse(String(masterRows[i][6])) : {} };
       break;
     }
   }
@@ -462,16 +481,33 @@ function scheduleReminder(slotId, sheetId, name, email, date, startTime, endTime
   let log = ss.getSheetByName(LOG_SHEET);
   if (!log) {
     log = ss.insertSheet(LOG_SHEET);
-    log.appendRow(['slotId','sheetId','name','email','date','startTime','endTime','reminderDate','sent']);
-    log.getRange(1,1,1,9).setFontWeight('bold').setBackground('#1a2744').setFontColor('#ffffff');
+    log.appendRow(['slotId','sheetId','name','email','date','startTime','endTime','reminderDate','sent','sheetTitle']);
+    log.getRange(1,1,1,10).setFontWeight('bold').setBackground('#1a2744').setFontColor('#ffffff');
   }
+  // Always force columns 5-8 (date, startTime, endTime, reminderDate) to plain text
+  // This fixes existing sheets that weren't formatted on creation
+  log.getRange(1, 5, 5000, 4).setNumberFormat('@STRING@');
+  // Look up the sheet title from master sheet
+  let sheetTitle = '';
+  try {
+    const master = ss.getSheetByName(MASTER_SHEET_NAME);
+    if (master) {
+      const rows = master.getDataRange().getValues();
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(sheetId)) { sheetTitle = String(rows[i][1]||''); break; }
+      }
+    }
+  } catch(e) {}
   const slotDate = new Date(String(date)+'T00:00:00');
   [days1, days2].forEach(days => {
     const remDate = new Date(slotDate);
     remDate.setDate(remDate.getDate() - days);
     if (remDate > new Date()) {
-      log.appendRow([slotId, sheetId, name, email, date, startTime, endTime||'',
-        remDate.toISOString().slice(0,10), false]);
+      log.appendRow([
+        String(slotId), String(sheetId), String(name), String(email),
+        String(date), String(startTime||''), String(endTime||''),
+        remDate.toISOString().slice(0,10), false, String(sheetTitle)
+      ]);
     }
   });
 }
@@ -485,10 +521,13 @@ function sendPendingReminders() {
   const adminEmail = props.getProperty('ADMIN_EMAIL') || Session.getActiveUser().getEmail();
   const todayStr = new Date().toISOString().slice(0,10);
   const rows = log.getDataRange().getValues();
-  const sentCombos = new Set(); // deduplicate by email+date
+  const sentCombos = new Set();
   for (let i = 1; i < rows.length; i++) {
-    const [slotId, sheetId, name, email, date, startTime, endTime, reminderDate, sent] = rows[i];
+    const [slotId, sheetId, name, email, date, startTimeRaw, endTimeRaw, reminderDate, sent] = rows[i];
     if (sent || String(reminderDate).slice(0,10) !== todayStr) continue;
+    // Normalize times in case Sheets converted them to serial numbers
+    const startTime = normalizeTime(startTimeRaw);
+    const endTime   = normalizeTime(endTimeRaw||'');
     const slotsSheet = ss.getSheetByName(SLOTS_SHEET_PREFIX + sheetId);
     if (slotsSheet) {
       const slotRows = slotsSheet.getDataRange().getValues();
@@ -502,12 +541,16 @@ function sendPendingReminders() {
     sentCombos.add(comboKey);
     const daysUntil = Math.round((new Date(String(date)+'T00:00:00') - new Date()) / 86400000);
     const label = daysUntil === 1 ? 'Tomorrow' : 'in ' + daysUntil + ' Days';
+    const sheetTitle = String(rows[i][9]||'');
+    const eventLine = sheetTitle ? 'Event: ' + sheetTitle + '\n' : '';
+    const formattedDate = formatDate(String(date));
     try {
       sendMail({
         to: String(email),
-        subject: 'Reminder: Presentation ' + label + ' — ' + formatDate(date) + ' at ' + startTime,
+        subject: 'Reminder: Presentation ' + label + (sheetTitle ? ' — ' + sheetTitle : '') + ' on ' + formattedDate,
         body: 'Hi ' + name + ',\n\nThis is a reminder that you are scheduled to present:\n\n' +
-              'Date: ' + formatDate(date) + '\nTime: ' + startTime + (endTime?' – '+endTime:'') +
+              eventLine +
+              'Date: ' + formattedDate + '\nTime: ' + startTime + (endTime ? ' – ' + endTime : '') +
               '\n\nIf you need to cancel, please contact ' + adminEmail + ' as soon as possible.' +
               '\n\nThis is an automated reminder.',
         replyTo: adminEmail
@@ -529,20 +572,27 @@ function testReminders() {
   const sentCombos = new Set();
   let count = 0;
   for (let i = 1; i < rows.length; i++) {
-    const [slotId, sheetId, name, email, date, startTime, endTime, reminderDate, sent] = rows[i];
+    const [slotId, sheetId, name, email, date, startTimeRaw, endTimeRaw, reminderDate, sent] = rows[i];
     if (sent) continue;
     const remDt = new Date(String(reminderDate).slice(0,10)+'T00:00:00');
     if (remDt > cutoff) continue;
+    // Normalize times
+    const startTime = normalizeTime(startTimeRaw);
+    const endTime   = normalizeTime(endTimeRaw||'');
     const comboKey = String(email).toLowerCase() + '::' + String(date);
     if (sentCombos.has(comboKey)) { log.getRange(i+1,9).setValue(true); continue; }
     sentCombos.add(comboKey);
+    const sheetTitle = String(rows[i][9]||'');
+    const eventLine = sheetTitle ? 'Event: ' + sheetTitle + '\n' : '';
+    const formattedDate = formatDate(String(date));
     try {
       sendMail({
         to: String(email),
-        subject: '[TEST REMINDER] ' + formatDate(date) + ' at ' + startTime,
+        subject: '[TEST REMINDER] ' + (sheetTitle ? sheetTitle + ' — ' : '') + formattedDate + ' at ' + startTime,
         body: '[THIS IS A TEST — not a real reminder]\n\nHi ' + name +
-              ',\n\nTest reminder for:\nDate: ' + formatDate(date) +
-              '\nTime: ' + startTime + (endTime?' – '+endTime:'') +
+              ',\n\nTest reminder for:\n' + eventLine +
+              'Date: ' + formattedDate +
+              '\nTime: ' + startTime + (endTime ? ' – ' + endTime : '') +
               '\n\nIf you received this, the reminder system is working.',
         replyTo: adminEmail
       });
@@ -633,10 +683,29 @@ function normalizeTime(val) {
 }
 
 function formatDate(dateStr) {
-  const m=String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return String(dateStr);
-  const d=new Date(Date.UTC(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])));
-  return d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'});
+  if (!dateStr) return '';
+  const s = String(dateStr).trim();
+  // Clean YYYY-MM-DD
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])));
+    return d.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC'});
+  }
+  // Date object or serial number — normalize first
+  if (dateStr instanceof Date || typeof dateStr === 'number') {
+    return formatDate(normalizeDate(dateStr));
+  }
+  // Arbitrary date string like "Fri Jun 05 2026 00:00:00 GMT-0400" — parse it
+  try {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const mo = String(parsed.getMonth()+1).padStart(2,'0');
+      const dy = String(parsed.getDate()).padStart(2,'0');
+      return formatDate(y+'-'+mo+'-'+dy);
+    }
+  } catch(e) {}
+  return s;
 }
 
 // ═══════════════════════════════════════════════════════════════
