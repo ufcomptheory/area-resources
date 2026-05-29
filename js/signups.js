@@ -115,32 +115,63 @@ function isCalPrimary(calId) {
   return cal && cal.account === 'primary';
 }
 
-// Create a simple blocked-off event on a primary account calendar via Google Calendar API
+// Create/update blocked-off events on a primary account calendar via Google Calendar API
+// Stores gcalIds back to Apps Script to prevent duplicates and enable deletion
 async function seedCalendarViaDashboard(sheetId, calendarId) {
   const url = (STORE.settings.signups || {}).appsScriptUrl;
   if (!url) return { created: [], errors: [] };
-  // Get slots from Apps Script
+  // Get sheet data including any existing primaryGcalIds
   const resp = await fetch(url + '?action=getSheet&sheetId=' + encodeURIComponent(sheetId));
   if (!resp.ok) throw new Error('Could not load sheet slots');
   const data = await resp.json();
   const slots = data.slots || [];
-  // Group by unique session date + find session start/end
+  const existingIds = data.primaryGcalIds || {}; // { date: gcalId }
+  // Group by unique session date, find session span
   const sessions = {};
   slots.forEach(s => {
+    if (!s.date) return;
     if (!sessions[s.date]) sessions[s.date] = { startTime: s.startTime, endTime: s.endTime, title: data.title };
-    else {
-      // Extend end time if needed
-      if (s.endTime > sessions[s.date].endTime) sessions[s.date].endTime = s.endTime;
-    }
+    else if (s.endTime > sessions[s.date].endTime) sessions[s.date].endTime = s.endTime;
   });
-  const created = [], errors = [];
+  const created = [], errors = [], newIds = { ...existingIds };
   for (const [date, sess] of Object.entries(sessions)) {
     try {
+      const existing = existingIds[date];
+      if (existing) {
+        // Try to update existing event
+        const body = {
+          summary: sess.title,
+          start: { dateTime: parseDateTimeForApi(date, sess.startTime), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+          end:   { dateTime: parseDateTimeForApi(date, sess.endTime),   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+        };
+        const ok = await calUpdateOnTarget(calendarId, existing, _accessToken, body);
+        if (ok) { created.push(date); continue; }
+        // Event was deleted externally — fall through to create
+        await calDeleteOnTarget(calendarId, existing, _accessToken).catch(()=>{});
+      }
       const gcalId = await calCreateEvent(sess.title, date, sess.startTime, sess.endTime, '', 'Sign-Up');
-      if (gcalId) created.push(date);
+      if (gcalId) { newIds[date] = gcalId; created.push(date); }
     } catch(e) { errors.push(date + ': ' + e.message); }
   }
+  // Save gcalIds back to Apps Script so we can find them later for deletion/update
+  if (Object.keys(newIds).length) {
+    try { await asGet(url, 'storePrimaryGcalIds', { sheetId, ids: newIds }); } catch(e) {}
+  }
   return { created, errors };
+}
+
+function parseDateTimeForApi(dateStr, timeStr) {
+  if (!timeStr) return dateStr;
+  const dt = new Date(dateStr + 'T00:00:00');
+  const m = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if (m) {
+    let h = parseInt(m[1]), mn = parseInt(m[2]);
+    const ap = (m[3]||'').toUpperCase();
+    if (ap==='PM'&&h<12) h+=12;
+    if (ap==='AM'&&h===12) h=0;
+    dt.setHours(h, mn, 0, 0);
+  }
+  return dt.toISOString();
 }
 
 window.renderSignups = function() {
@@ -376,6 +407,18 @@ window.deleteSuSheet = async function(sheetId) {
   if(!confirm('Delete this sign-up sheet? This cannot be undone.')) return;
   const url = (STORE.settings.signups||{}).appsScriptUrl;
   try {
+    // First get sheet data to find any primary calendar events to delete
+    try {
+      const resp = await fetch(url + '?action=getSheet&sheetId=' + encodeURIComponent(sheetId));
+      if (resp.ok) {
+        const data = await resp.json();
+        const primaryIds = data.primaryGcalIds || {};
+        for (const [date, gcalId] of Object.entries(primaryIds)) {
+          if (gcalId) await calDeleteOnTarget(CONFIG.CALENDAR_ID, gcalId, _accessToken).catch(()=>{});
+        }
+      }
+    } catch(e) {} // Don't block deletion if calendar cleanup fails
+    // Delete the sheet from Apps Script (also handles ufcomposers calendar events)
     await asGet(url, 'deleteSheet', {sheetId});
     showToast('Sheet deleted.','success');
     renderSuSheetsList();
