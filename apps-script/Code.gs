@@ -202,6 +202,8 @@ function cancelSlot(data) {
       slotsSheet.getRange(i+1, COL.CANCELLED+1).setValue('false');
       if (studentEmail) sendCancellation(studentName, studentEmail,
         slotDate, normalizeTime(rows[i][COL.START]), normalizeTime(rows[i][COL.END]||''));
+      // Clean up pending email reminders for this slot
+      cleanupReminders(sheetId, slotId);
       // Re-read and sync calendar (slot now open, title reverts to generic)
       const sheetMeta = getSheetMeta(sheetId);
       if (sheetMeta.syncCalendar) {
@@ -318,6 +320,8 @@ function deleteSheet(data) {
   }
   const s = ss.getSheetByName(SLOTS_SHEET_PREFIX + sheetId);
   if (s) ss.deleteSheet(s);
+  // Clean up all pending reminders for this sheet
+  cleanupReminders(sheetId, null);
   return { ok: true };
 }
 
@@ -512,6 +516,23 @@ function scheduleReminder(slotId, sheetId, name, email, date, startTime, endTime
   });
 }
 
+// Mark all pending EmailLog rows for a given sheetId (or slotId) as done
+function cleanupReminders(sheetId, slotId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName(LOG_SHEET);
+  if (!log) return;
+  const rows = log.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][8]) continue; // already sent/done
+    const rowSheetId = String(rows[i][1]);
+    const rowSlotId  = String(rows[i][0]);
+    if (rowSheetId === String(sheetId) &&
+        (!slotId || rowSlotId === String(slotId))) {
+      log.getRange(i+1, 9).setValue(true);
+    }
+  }
+}
+
 // Run daily via time-based trigger
 function sendPendingReminders() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -529,12 +550,14 @@ function sendPendingReminders() {
     const startTime = normalizeTime(startTimeRaw);
     const endTime   = normalizeTime(endTimeRaw||'');
     const slotsSheet = ss.getSheetByName(SLOTS_SHEET_PREFIX + sheetId);
-    if (slotsSheet) {
-      const slotRows = slotsSheet.getDataRange().getValues();
-      const slot = slotRows.find(r => String(r[COL.ID]) === String(slotId));
-      if (!slot || slot[COL.CANCELLED]==='true' || !slot[COL.NAME]) {
-        log.getRange(i+1,9).setValue(true); continue;
-      }
+    if (!slotsSheet) {
+      // Sheet was deleted — mark all its reminders as done
+      log.getRange(i+1,9).setValue(true); continue;
+    }
+    const slotRows = slotsSheet.getDataRange().getValues();
+    const slot = slotRows.find(r => String(r[COL.ID]) === String(slotId));
+    if (!slot || slot[COL.CANCELLED]==='true' || !slot[COL.NAME]) {
+      log.getRange(i+1,9).setValue(true); continue;
     }
     const comboKey = String(email).toLowerCase() + '::' + String(date);
     if (sentCombos.has(comboKey)) { log.getRange(i+1,9).setValue(true); continue; }
