@@ -729,7 +729,7 @@ function renderGTATable() {
   // Hours check: total assigned vs available per GTA
   const hoursMap={};
   asgns.forEach(a=>{ hoursMap[a.gta]=(hoursMap[a.gta]||0)+Number(a.hours); });
-  const gtaRoster=studentsActiveDuringSemester(sem).filter(p=>p.hours>0);
+  const gtaRoster=STORE.people.filter(p=>p.type==='student'&&p.active!==false&&p.hours>0);
   const hoursHtml=gtaRoster.map(g=>{
     const assigned=hoursMap[g.name]||0;
     const avail=g.hours||0;
@@ -788,35 +788,7 @@ function getDefaultGTADuties() {
     { role:'Introduction to Music Technology TAs', text:'- Assist in the teaching of Introduction to Music Technology\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with electroacoustic music area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
   ];
 }
-// Returns students who were active (enrolled) during a given semester
-// Uses entryYear/entryTerm and exitYear to bound the range
-function studentsActiveDuringSemester(sem) {
-  if (!sem) return students();
-  const semMatch = sem.match(/(Spring|Summer|Fall)\s+(\d{4})/i);
-  if (!semMatch) return students();
-  const semSeason = semMatch[1].toLowerCase();
-  const semYear   = parseInt(semMatch[2]);
-  // Convert semester to a numeric key for comparison: YYYY.1=Spring, YYYY.2=Summer, YYYY.3=Fall
-  const semOrder = { spring: 1, summer: 2, fall: 3 };
-  const semKey = semYear + semOrder[semSeason] / 10;
-
-  return STORE.people.filter(p => {
-    if (p.type !== 'student') return false;
-    // Parse entry
-    const entryYear = parseInt(p.entryYear) || 0;
-    const entryTerm = (p.entryTerm || 'fall').toLowerCase();
-    const entryKey  = entryYear + (semOrder[entryTerm] || 3) / 10;
-    // Parse exit (if graduated/deactivated)
-    let exitKey = 9999;
-    if (p.active === false && p.exitYear) {
-      const ey = parseInt(p.exitYear);
-      // Assume they were active through the end of the semester they exited
-      // exitYear alone — assume they finished at end of that academic year (Spring)
-      exitKey = ey + 1 / 10; // Spring of exit year
-    }
-    return semKey >= entryKey && semKey <= exitKey;
-  });
-}
+window.delGTA=function(id){STORE.gtaAssignments=STORE.gtaAssignments.filter(a=>a.id!==id);save();renderGTATable();};
 function renderGTAHistory() {
   const sel=document.getElementById('gta-hist-filter');
   const names=[...new Set(STORE.gtaAssignments.map(a=>a.gta))].sort();
@@ -1432,12 +1404,8 @@ function setupEventHandlers() {
   document.getElementById('gta-hist-filter').addEventListener('change',renderGTAHistory);
   document.getElementById('btn-add-gta').addEventListener('click',()=>{
     const sel=document.getElementById('gta-name-sel');
-    const sem=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
-    // Only show students who were active during this semester and have GTA hours configured
-    const activeThen=studentsActiveDuringSemester(sem).filter(s=>s.hours>0);
-    sel.innerHTML=activeThen.map(s=>`<option>${s.name}</option>`).join('');
-    if(!activeThen.length) sel.innerHTML='<option value="">No GTA students for this semester</option>';
-    document.getElementById('gta-sem-inp').value=sem;
+    sel.innerHTML=students().filter(s=>s.hours>0).map(s=>`<option>${s.name}</option>`).join('');
+    document.getElementById('gta-sem-inp').value=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
     openModal('modal-gta');
   });
   document.getElementById('btn-save-gta').addEventListener('click',()=>{
