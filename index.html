@@ -952,7 +952,16 @@
       <div class="form-group"><label>Degree</label><select id="person-degree" style="width:120px"></select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Year of Entry</label><input type="text" id="person-entry" style="width:110px" placeholder="e.g. 2024"></div>
+      <div class="form-group"><label>Entry Semester</label>
+        <div style="display:flex;gap:6px">
+          <select id="person-entry-term" style="width:100px">
+            <option value="Fall">Fall</option>
+            <option value="Spring">Spring</option>
+            <option value="Summer">Summer</option>
+          </select>
+          <input type="text" id="person-entry" style="width:80px" placeholder="2024">
+        </div>
+      </div>
       <div class="form-group"><label>Exp. Graduation</label><input type="text" id="person-grad" style="width:110px" placeholder="e.g. 2027"></div>
       <div class="form-group"><label>Status</label><select id="person-status"><option value="">None</option><option>Double Major</option><option>Double Degree</option><option>Cognate</option></select></div>
     </div>
