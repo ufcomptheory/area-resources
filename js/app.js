@@ -729,7 +729,7 @@ function renderGTATable() {
   // Hours check: total assigned vs available per GTA
   const hoursMap={};
   asgns.forEach(a=>{ hoursMap[a.gta]=(hoursMap[a.gta]||0)+Number(a.hours); });
-  const gtaRoster=STORE.people.filter(p=>p.type==='student'&&p.active!==false&&p.hours>0);
+  const gtaRoster=studentsActiveDuringSemester(sem).filter(p=>p.hours>0);
   const hoursHtml=gtaRoster.map(g=>{
     const assigned=hoursMap[g.name]||0;
     const avail=g.hours||0;
@@ -788,7 +788,43 @@ function getDefaultGTADuties() {
     { role:'Introduction to Music Technology TAs', text:'- Assist in the teaching of Introduction to Music Technology\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with electroacoustic music area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
   ];
 }
-window.delGTA=function(id){STORE.gtaAssignments=STORE.gtaAssignments.filter(a=>a.id!==id);save();renderGTATable();};
+// Returns students who were active (enrolled) during a given semester
+function studentsActiveDuringSemester(sem) {
+  if (!sem) return students();
+  const semMatch = sem.match(/(Spring|Summer|Fall)\s+(\d{4})/i);
+  if (!semMatch) return students();
+  const semSeason = semMatch[1].toLowerCase();
+  const semYear   = parseInt(semMatch[2]);
+  const semOrder  = { spring: 1, summer: 2, fall: 3 };
+  const semKey    = semYear + (semOrder[semSeason] || 3) / 10;
+
+  return STORE.people.filter(p => {
+    if (p.type !== 'student') return false;
+    // p.entry is stored as "Fall 2024" or just "2024" (legacy)
+    let entryYear, entryTerm = 'fall';
+    const entryFull = String(p.entry || '').trim();
+    const entryFull2 = String(p.entryYear || '').trim();
+    const entryStr = entryFull || entryFull2;
+    if (!entryStr) return true; // no entry data — show in all semesters
+    const m = entryStr.match(/(Spring|Summer|Fall)?\s*(\d{4})/i);
+    if (m) {
+      entryTerm = m[1] ? m[1].toLowerCase() : 'fall';
+      entryYear = parseInt(m[2]);
+    } else {
+      entryYear = parseInt(entryStr) || 0;
+    }
+    if (!entryYear) return true;
+    const entryKey = entryYear + (semOrder[entryTerm] || 3) / 10;
+    // Exit: use exitYear if graduated
+    let exitKey = 9999;
+    if (p.active === false && p.exitYear) {
+      const ey = parseInt(p.exitYear);
+      // Assume active through Spring of exit year
+      exitKey = ey + 1 / 10;
+    }
+    return semKey >= entryKey && semKey <= exitKey;
+  });
+}
 function renderGTAHistory() {
   const sel=document.getElementById('gta-hist-filter');
   const names=[...new Set(STORE.gtaAssignments.map(a=>a.gta))].sort();
@@ -974,7 +1010,16 @@ window.openPersonModal = function(id) {
   document.getElementById('person-degree').innerHTML = STORE.degrees.map(d=>`<option${p&&p.degree===d?' selected':''}>${d}</option>`).join('');
   if (type==='student') {
     document.getElementById('person-name').value = p?p.name:'';
-    document.getElementById('person-entry').value = p?p.entry||'':'';
+    // Populate entry term + year from p.entry which may be "Fall 2024" or just "2024"
+  const entryStr = p ? String(p.entry||'').trim() : '';
+  const entryM = entryStr.match(/(Spring|Summer|Fall)?\s*(\d{4})/i);
+  if (entryM) {
+    const termEl = document.getElementById('person-entry-term');
+    if (termEl && entryM[1]) termEl.value = entryM[1].charAt(0).toUpperCase() + entryM[1].slice(1).toLowerCase();
+    document.getElementById('person-entry').value = entryM[2] || '';
+  } else {
+    document.getElementById('person-entry').value = entryStr;
+  }
     document.getElementById('person-grad').value = p?p.grad||'':'';
     document.getElementById('person-status').value = p?p.status||'':'';
     document.getElementById('person-chair').value = p?p.chair||'':'';
@@ -1404,8 +1449,12 @@ function setupEventHandlers() {
   document.getElementById('gta-hist-filter').addEventListener('change',renderGTAHistory);
   document.getElementById('btn-add-gta').addEventListener('click',()=>{
     const sel=document.getElementById('gta-name-sel');
-    sel.innerHTML=students().filter(s=>s.hours>0).map(s=>`<option>${s.name}</option>`).join('');
-    document.getElementById('gta-sem-inp').value=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
+    const sem=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
+    // Only show students who were active during this semester and have GTA hours configured
+    const activeThen=studentsActiveDuringSemester(sem).filter(s=>s.hours>0);
+    sel.innerHTML=activeThen.map(s=>`<option>${s.name}</option>`).join('');
+    if(!activeThen.length) sel.innerHTML='<option value="">No GTA students for this semester</option>';
+    document.getElementById('gta-sem-inp').value=sem;
     openModal('modal-gta');
   });
   document.getElementById('btn-save-gta').addEventListener('click',()=>{
@@ -1488,7 +1537,9 @@ function setupEventHandlers() {
     if(type==='student'){
       p.name=document.getElementById('person-name').value.trim();
       p.degree=document.getElementById('person-degree').value;
-      p.entry=document.getElementById('person-entry').value;
+      const entryYear = document.getElementById('person-entry').value.trim();
+      const entryTerm = document.getElementById('person-entry-term') ? document.getElementById('person-entry-term').value : 'Fall';
+      p.entry = entryYear ? (entryTerm + ' ' + entryYear) : '';
       p.grad=document.getElementById('person-grad').value;
       p.status=document.getElementById('person-status').value;
       p.chair=document.getElementById('person-chair').value;
