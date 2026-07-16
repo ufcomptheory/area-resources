@@ -788,6 +788,7 @@ function getDefaultGTADuties() {
     { role:'Introduction to Music Technology TAs', text:'- Assist in the teaching of Introduction to Music Technology\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with electroacoustic music area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
   ];
 }
+window.delGTA=function(id){STORE.gtaAssignments=STORE.gtaAssignments.filter(a=>a.id!==id);save();renderGTATable();};
 // Returns students who were active (enrolled) during a given semester
 function studentsActiveDuringSemester(sem) {
   if (!sem) return students();
