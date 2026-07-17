@@ -723,6 +723,11 @@ function renderGTA() {
   sel.innerHTML=sems.map(s=>`<option${s===cur?' selected':''}>${s}</option>`).join('');
   renderGTATable(); renderGTAHistory();
 }
+window.delGTA = function(id) {
+  STORE.gtaAssignments = STORE.gtaAssignments.filter(a => a.id !== id);
+  save(); renderGTATable();
+};
+
 function renderGTATable() {
   const sem=document.getElementById('gta-sem-select').value||STORE.settings.currentSemester;
   const asgns=STORE.gtaAssignments.filter(a=>a.semester===sem).sort((a,b)=>a.gta.localeCompare(b.gta));
@@ -788,7 +793,6 @@ function getDefaultGTADuties() {
     { role:'Introduction to Music Technology TAs', text:'- Assist in the teaching of Introduction to Music Technology\n- Grade homework and return it in a timely manner\n- Post grades in a timely manner\n- Hold office hours to assist students\n- Attend scheduled meetings with electroacoustic music area faculty\n- Check email and phone/text messages daily\n- Monitor Recital Attendance, as assigned' },
   ];
 }
-window.delGTA=function(id){STORE.gtaAssignments=STORE.gtaAssignments.filter(a=>a.id!==id);save();renderGTATable();};
 // Returns students who were active (enrolled) during a given semester
 function studentsActiveDuringSemester(sem) {
   if (!sem) return students();
